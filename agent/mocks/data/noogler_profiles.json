@@ -1,0 +1,371 @@
+{
+  "alex_noogler": {
+    "persona_id": "alex_noogler",
+    "ldap": "alexnoogler",
+    "full_name": "Alex Rivera",
+    "onboarding_day": 12,
+    "pod": "Applied AI FDE - NorthAm Pod A",
+    "manager": "maya_chen (maya_chen@)",
+    "buddy": "devon_patel (devon_patel@)",
+    "location": "MTV",
+    "setup_items": [
+      {
+        "id": "cloudtop",
+        "category": "workstation",
+        "title": "Provision Linux Cloudtop & configure Git/Piper",
+        "status": "completed",
+        "link": "go/mytech",
+        "notes": "High-spec Linux Cloudtop provisioned."
+      },
+      {
+        "id": "argolis",
+        "category": "argolis",
+        "title": "Complete Argolis quizzes & 2 Qwiklabs",
+        "status": "in_progress",
+        "link": "go/argolis",
+        "notes": "1 of 2 quizzes done; approval takes ~1 business day after completion."
+      },
+      {
+        "id": "fde_github",
+        "category": "github",
+        "title": "Register GitHub account for cloud-ai-fde org",
+        "status": "not_started",
+        "link": "go/fde-github",
+        "notes": "Required before contributing to customer co-build repos."
+      },
+      {
+        "id": "chat_rituals",
+        "category": "rituals",
+        "title": "Join FDE Chat spaces & subscribe to OOO calendar",
+        "status": "completed",
+        "link": "go/fde-noogler-guide",
+        "notes": "Joined AI Tech GTM All and Global GenAI FDE chat."
+      }
+    ],
+    "enablement": {
+      "L200": {
+        "track_id": "L200",
+        "title": "GEAP L200: Fundamentals (5 Days of AI)",
+        "status": "in_progress",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 30,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "Modules complete; Final Project Assessment still needs submission in Exceed LMS.",
+        "link": "go/fde-enablement-dash"
+      },
+      "L300": {
+        "track_id": "L300",
+        "title": "GEAP L300: Certified Specialist Challenge Labs",
+        "status": "not_started",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L200"],
+        "labs_required": 6,
+        "labs_completed": 0,
+        "labs": [
+          {"id": "lab_1", "title": "Accelerate Development with Antigravity", "completed": false},
+          {"id": "lab_2", "title": "Deploy an Agent with Agent Development Kit", "completed": false},
+          {"id": "lab_3", "title": "Evaluate and Improve ADK Agents", "completed": false},
+          {"id": "lab_4", "title": "Grounding with Vertex AI Search", "completed": false},
+          {"id": "lab_5", "title": "Multi-Agent Orchestration Patterns", "completed": false},
+          {"id": "lab_6", "title": "Agent Governance and Guardrails", "completed": false},
+          {"id": "lab_7", "title": "Production Deployment to Agent Engine", "completed": false}
+        ],
+        "notes": "Complete at least 6 of 7 challenge labs. Strict prerequisite for L400 Bootcamp.",
+        "link": "goo.gle/cps"
+      },
+      "L400": {
+        "track_id": "L400",
+        "title": "GEAP L400: Agent Building Bootcamp",
+        "status": "blocked",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L300"],
+        "notes": "In-person bootcamp where you build and present 2 agents. Blocked until L300 (6/7 labs) is complete.",
+        "link": "go/fde-enablement-dash"
+      },
+      "PCA": {
+        "track_id": "PCA",
+        "title": "Google Professional Cloud Architect (PCA) Certification",
+        "status": "not_started",
+        "target_window_days": [1, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "50 questions in 2 hours. Note: OnVUE proctoring is much smoother on a personal laptop.",
+        "link": "go/cloudu"
+      },
+      "GAIL": {
+        "track_id": "GAIL",
+        "title": "Generative AI Leader Certification",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Recommended early certification completed in Week 2.",
+        "link": "go/cloudu"
+      },
+      "CDL": {
+        "track_id": "CDL",
+        "title": "Cloud Digital Leader Certification",
+        "status": "not_started",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Optional foundational cloud certification.",
+        "link": "go/cloudu"
+      }
+    }
+  },
+  "priya_fde": {
+    "persona_id": "priya_fde",
+    "ldap": "priyafde",
+    "full_name": "Priya Nair",
+    "onboarding_day": 42,
+    "pod": "Applied AI FDE - NorthAm Pod B",
+    "manager": "carlos_mendez (carlos_mendez@)",
+    "buddy": "sam_kim (sam_kim@)",
+    "location": "NYC",
+    "setup_items": [
+      {
+        "id": "cloudtop",
+        "category": "workstation",
+        "title": "Provision Linux Cloudtop & configure Git/Piper",
+        "status": "completed",
+        "link": "go/mytech",
+        "notes": "Completed Day 3."
+      },
+      {
+        "id": "argolis",
+        "category": "argolis",
+        "title": "Complete Argolis quizzes & 2 Qwiklabs",
+        "status": "completed",
+        "link": "go/argolis",
+        "notes": "Sandbox active."
+      },
+      {
+        "id": "fde_github",
+        "category": "github",
+        "title": "Register GitHub account for cloud-ai-fde org",
+        "status": "completed",
+        "link": "go/fde-github",
+        "notes": "Access verified."
+      },
+      {
+        "id": "chat_rituals",
+        "category": "rituals",
+        "title": "Join FDE Chat spaces & subscribe to OOO calendar",
+        "status": "completed",
+        "link": "go/fde-noogler-guide",
+        "notes": "Subscribed and attending weekly syncs."
+      }
+    ],
+    "enablement": {
+      "L200": {
+        "track_id": "L200",
+        "title": "GEAP L200: Fundamentals (5 Days of AI)",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 30,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "Final Project Assessment approved in Exceed LMS.",
+        "link": "go/fde-enablement-dash"
+      },
+      "L300": {
+        "track_id": "L300",
+        "title": "GEAP L300: Certified Specialist Challenge Labs",
+        "status": "in_progress",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L200"],
+        "labs_required": 6,
+        "labs_completed": 4,
+        "labs": [
+          {"id": "lab_1", "title": "Accelerate Development with Antigravity", "completed": true},
+          {"id": "lab_2", "title": "Deploy an Agent with Agent Development Kit", "completed": true},
+          {"id": "lab_3", "title": "Evaluate and Improve ADK Agents", "completed": true},
+          {"id": "lab_4", "title": "Grounding with Vertex AI Search", "completed": true},
+          {"id": "lab_5", "title": "Multi-Agent Orchestration Patterns", "completed": false},
+          {"id": "lab_6", "title": "Agent Governance and Guardrails", "completed": false},
+          {"id": "lab_7", "title": "Production Deployment to Agent Engine", "completed": false}
+        ],
+        "notes": "4 of 7 labs complete; need 2 more labs to unlock L400 Bootcamp registration.",
+        "link": "goo.gle/cps"
+      },
+      "L400": {
+        "track_id": "L400",
+        "title": "GEAP L400: Agent Building Bootcamp",
+        "status": "blocked",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L300"],
+        "notes": "Waiting on L300 completion (6/7 labs) before booking cohort travel.",
+        "link": "go/fde-enablement-dash"
+      },
+      "PCA": {
+        "track_id": "PCA",
+        "title": "Google Professional Cloud Architect (PCA) Certification",
+        "status": "in_progress",
+        "target_window_days": [1, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "Practicing mock exams; targeting Day 55 exam date.",
+        "link": "go/cloudu"
+      },
+      "GAIL": {
+        "track_id": "GAIL",
+        "title": "Generative AI Leader Certification",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Completed Day 18.",
+        "link": "go/cloudu"
+      },
+      "CDL": {
+        "track_id": "CDL",
+        "title": "Cloud Digital Leader Certification",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Completed Day 24.",
+        "link": "go/cloudu"
+      }
+    }
+  },
+  "jordan_fde": {
+    "persona_id": "jordan_fde",
+    "ldap": "jordanfde",
+    "full_name": "Jordan Lee",
+    "onboarding_day": 70,
+    "pod": "Applied AI FDE - EMEA Pod C",
+    "manager": "elena_rossi (elena_rossi@)",
+    "buddy": "liam_oconnor (liam_oconnor@)",
+    "location": "LON",
+    "setup_items": [
+      {
+        "id": "cloudtop",
+        "category": "workstation",
+        "title": "Provision Linux Cloudtop & configure Git/Piper",
+        "status": "completed",
+        "link": "go/mytech",
+        "notes": "Completed."
+      },
+      {
+        "id": "argolis",
+        "category": "argolis",
+        "title": "Complete Argolis quizzes & 2 Qwiklabs",
+        "status": "completed",
+        "link": "go/argolis",
+        "notes": "Completed."
+      },
+      {
+        "id": "fde_github",
+        "category": "github",
+        "title": "Register GitHub account for cloud-ai-fde org",
+        "status": "completed",
+        "link": "go/fde-github",
+        "notes": "Completed."
+      },
+      {
+        "id": "chat_rituals",
+        "category": "rituals",
+        "title": "Join FDE Chat spaces & subscribe to OOO calendar",
+        "status": "completed",
+        "link": "go/fde-noogler-guide",
+        "notes": "Completed."
+      }
+    ],
+    "enablement": {
+      "L200": {
+        "track_id": "L200",
+        "title": "GEAP L200: Fundamentals (5 Days of AI)",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 30,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "Completed Day 20.",
+        "link": "go/fde-enablement-dash"
+      },
+      "L300": {
+        "track_id": "L300",
+        "title": "GEAP L300: Certified Specialist Challenge Labs",
+        "status": "completed",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L200"],
+        "labs_required": 6,
+        "labs_completed": 6,
+        "labs": [
+          {"id": "lab_1", "title": "Accelerate Development with Antigravity", "completed": true},
+          {"id": "lab_2", "title": "Deploy an Agent with Agent Development Kit", "completed": true},
+          {"id": "lab_3", "title": "Evaluate and Improve ADK Agents", "completed": true},
+          {"id": "lab_4", "title": "Grounding with Vertex AI Search", "completed": true},
+          {"id": "lab_5", "title": "Multi-Agent Orchestration Patterns", "completed": true},
+          {"id": "lab_6", "title": "Agent Governance and Guardrails", "completed": true},
+          {"id": "lab_7", "title": "Production Deployment to Agent Engine", "completed": false}
+        ],
+        "notes": "6/7 labs completed; L300 requirement satisfied.",
+        "link": "goo.gle/cps"
+      },
+      "L400": {
+        "track_id": "L400",
+        "title": "GEAP L400: Agent Building Bootcamp",
+        "status": "completed",
+        "target_window_days": [31, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": ["L300"],
+        "notes": "Completed cohort bootcamp and presented 2 agents.",
+        "link": "go/fde-enablement-dash"
+      },
+      "PCA": {
+        "track_id": "PCA",
+        "title": "Google Professional Cloud Architect (PCA) Certification",
+        "status": "in_progress",
+        "target_window_days": [1, 60],
+        "hard_deadline_day": 90,
+        "required": true,
+        "prerequisite_tracks": [],
+        "notes": "Past Day 60 pacing target; book exam soon to finish well before Day 90.",
+        "link": "go/cloudu"
+      },
+      "GAIL": {
+        "track_id": "GAIL",
+        "title": "Generative AI Leader Certification",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Completed.",
+        "link": "go/cloudu"
+      },
+      "CDL": {
+        "track_id": "CDL",
+        "title": "Cloud Digital Leader Certification",
+        "status": "completed",
+        "target_window_days": [1, 30],
+        "hard_deadline_day": 45,
+        "required": false,
+        "prerequisite_tracks": [],
+        "notes": "Completed.",
+        "link": "go/cloudu"
+      }
+    }
+  }
+}

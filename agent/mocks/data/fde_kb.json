@@ -1,0 +1,91 @@
+{
+  "dashboard_notes": {
+    "dashboard_url": "go/fde-enablement-dash",
+    "faq_url": "go/fde-dash-faq",
+    "sync_delay_note": "Exceed LMS and Challenge Lab credits can take up to 24 hours to appear on go/fde-enablement-dash. If missing after 24h, follow the re-enrollment steps in go/fde-dash-faq.",
+    "known_l300_bugs_url": "go/l300-bugs"
+  },
+  "setup_guides": {
+    "workstation": {
+      "title": "Workstation & Developer Toolchain",
+      "steps": [
+        "Provision a high-spec Linux Cloudtop via go/mytech.",
+        "Configure Git and Piper workspaces for internal repos.",
+        "Set up local Python/uv environment, ADK, Jetski, and Antigravity CLI."
+      ],
+      "links": ["go/mytech"]
+    },
+    "argolis": {
+      "title": "Argolis Personal GCP Sandbox",
+      "steps": [
+        "Visit go/argolis as early as possible in Week 1.",
+        "Complete the 2 mandatory quizzes and 2 Qwiklabs.",
+        "Wait ~1 full business day for sandbox approval, then configure gcloud/ADC access."
+      ],
+      "links": ["go/argolis"]
+    },
+    "github": {
+      "title": "FDE GitHub Organization Access",
+      "steps": [
+        "Register your GitHub account at go/fde-github.",
+        "Request access to the cloud-ai-fde GitHub organization.",
+        "Verify SSH/2FA compliance with GTM GitHub guidelines."
+      ],
+      "links": ["go/fde-github"]
+    },
+    "rituals": {
+      "title": "Team Communication & Recurring Rituals",
+      "steps": [
+        "Join core FDE Google Chat spaces (AI Tech GTM All, Global GenAI FDE chat) listed in go/fde-noogler-guide.",
+        "Subscribe to the team OOO calendar at go/fde-ooo-calendar.",
+        "Add recurring syncs: weekly FDE Community Learning Log and Friday Sub-Regional Triage.",
+        "Schedule intro 1:1s with your pod manager, onboarding buddy, and pod teammates."
+      ],
+      "links": ["go/fde-noogler-guide", "go/fde-ooo-calendar"]
+    },
+    "ramp_milestones": {
+      "title": "30 / 60 / 90-Day FDE Ramp Milestones",
+      "phases": [
+        {
+          "window": "Days 1-30: Setup & Foundations",
+          "items": [
+            "Complete Workstation, Argolis sandbox, and go/fde-github setup.",
+            "Finish GEAP L200 (5 Days of AI + Exceed LMS Final Project Assessment).",
+            "Optionally knock out GAIL / CDL early certifications and start PCA prep.",
+            "Shadow pod teammates on customer calls."
+          ]
+        },
+        {
+          "window": "Days 31-60: Deep Enablement & Capstone",
+          "items": [
+            "Complete at least 6 of 7 GEAP L300 Challenge Labs (strict prerequisite for L400).",
+            "Attend in-person L400 Agent Building Bootcamp (build & present 2 agents).",
+            "Book FDE Consultancy Skills 2-day workshop and pass PCA certification.",
+            "Complete the 10-day FDE Capstone Project and Field-Readiness Panel Defense."
+          ]
+        },
+        {
+          "window": "Days 61-90: Customer Co-Build",
+          "items": [
+            "Join an active customer co-build engagement and deliver customer sprints.",
+            "Ensure all required enablement items (L200, L300, L400, PCA) show green on go/fde-enablement-dash.",
+            "Volunteer as a Capstone panelist for incoming FDE cohorts."
+          ]
+        }
+      ],
+      "links": ["go/fde-noogler-guide", "go/fde-enablement-dash"]
+    }
+  },
+  "team_directory": {
+    "chat_spaces": [
+      {"name": "AI Tech GTM All", "purpose": "Broad Applied AI GTM announcements and updates"},
+      {"name": "Global GenAI FDE Chat", "purpose": "Global FDE engineering discussions, tips, and Q&A"},
+      {"name": "Regional / Vertical Pod Space", "purpose": "Day-to-day pod triage and customer staffing (check go/fde-noogler-guide)"}
+    ],
+    "calendars_and_rituals": [
+      {"name": "FDE OOO Calendar", "link": "go/fde-ooo-calendar", "cadence": "Auto-syncs Workday leaves"},
+      {"name": "FDE Community Learning Log", "link": "go/fde-noogler-guide", "cadence": "Weekly (Thursdays)"},
+      {"name": "Sub-Regional Triage", "link": "go/fde-noogler-guide", "cadence": "Weekly (Fridays)"}
+    ]
+  }
+}
