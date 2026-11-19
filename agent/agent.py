@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
-from google.adk.apps.app import App
+from google.adk.apps.app import App, ResumabilityConfig
 from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
 from google.adk.plugins import BasePlugin
-from google.adk.tools import AgentTool
+from google.adk.tools import AgentTool, FunctionTool
 
 from agent.config import AppConfig, get_config
 from agent.plugins import build_compaction_config, build_plugins
@@ -29,7 +29,7 @@ Routing Table:
 1. `enablement_agent`: L200, L300 (6/7 challenge labs), L400 Bootcamp eligibility/blockers, PCA/GAIL/CDL certifications, enablement status checks, marking progress, or go/fde-enablement-dash sync issues.
 2. `onboarding_guide_agent`: "What should I do next?", 30/60/90-day ramp plan, Cloudtop/Argolis/go/fde-github setup, onboarding buddy, pod manager, FDE Chat spaces, or team rituals.
 3. `duckie_proxy_agent`: Any general, non-FDE-specific Google question (Workday, gBenefits, PTO, corporate card, Pixel/go/stuff, Piper/CitC/Critique, general Noogler compliance, go/wtf acronyms).
-4. `switch_noogler_persona`: ONLY if the user explicitly asks to switch demo user/persona (alex_noogler, priya_fde, jordan_fde).
+4. `switch_noogler_persona`: ONLY if the user explicitly asks to switch demo user/persona (alex_noogler, priya_fde, jordan_fde). This tool requires human confirmation before executing; if the user rejects it, acknowledge that the persona was not changed.
 
 Rules:
 - If a user asks a compound question spanning multiple domains, call ALL relevant specialist tools and synthesize their answers into one well-structured response.
@@ -52,7 +52,7 @@ def create_coordinator_agent(config: AppConfig | None = None) -> LlmAgent:
             AgentTool(agent=create_enablement_agent(cfg)),
             AgentTool(agent=create_onboarding_guide_agent(cfg)),
             AgentTool(agent=create_duckie_proxy_agent(cfg)),
-            switch_noogler_persona,
+            FunctionTool(switch_noogler_persona, require_confirmation=True),
         ],
         generate_content_config=cfg.model.to_generate_content_config(),
     )
@@ -90,6 +90,7 @@ def build_app(
         name=name,
         root_agent=root_agent,
         plugins=active_plugins,
+        resumability_config=ResumabilityConfig(is_resumable=True),
         events_compaction_config=build_compaction_config(
             config=cfg,
             summarizer=summarizer,

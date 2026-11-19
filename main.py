@@ -1,8 +1,13 @@
 import argparse
 import asyncio
+from collections.abc import Callable
+from typing import Any
 import uuid
 
 from dotenv import load_dotenv
+from google.adk.flows.llm_flows.functions import (
+    REQUEST_CONFIRMATION_FUNCTION_CALL_NAME,
+)
 from google.adk.runners import Runner
 from google.genai import types
 
@@ -56,38 +61,101 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _prompt_tool_confirmation(
+    tool_name: str,
+    tool_args: dict[str, Any],
+    hint: str | None = None,
+) -> bool:
+    """Prompt the user on stdin to approve or reject a confirmation-gated tool call."""
+    prompt = (
+        f"[confirmation required] Allow tool `{tool_name}` "
+        f"with args {tool_args}? [y/N]: "
+    )
+    try:
+        answer = input(prompt).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in ("y", "yes")
+
+
 async def run_turn(
     runner: Runner,
     user_id: str,
     session_id: str,
     text: str,
     show_tools: bool = False,
+    confirm_fn: Callable[[str, dict[str, Any], str | None], bool] | None = None,
 ) -> None:
-    message = types.Content(
+    confirm = confirm_fn or _prompt_tool_confirmation
+    next_message: types.Content | None = types.Content(
         role="user",
         parts=[types.Part.from_text(text=text)],
     )
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=message,
-    ):
-        if show_tools and event.actions and event.actions.compaction:
-            comp = event.actions.compaction
-            print(
-                f"[compaction] summarized history "
-                f"({comp.start_timestamp:.0f}..{comp.end_timestamp:.0f})"
+    resume_invocation_id: str | None = None
+
+    while next_message is not None:
+        pending_confirmations: list[types.FunctionCall] = []
+        paused_invocation_id: str | None = None
+
+        run_kwargs: dict[str, Any] = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "new_message": next_message,
+        }
+        if resume_invocation_id is not None:
+            run_kwargs["invocation_id"] = resume_invocation_id
+
+        async for event in runner.run_async(**run_kwargs):
+            if show_tools and event.actions and event.actions.compaction:
+                comp = event.actions.compaction
+                print(
+                    f"[compaction] summarized history "
+                    f"({comp.start_timestamp:.0f}..{comp.end_timestamp:.0f})"
+                )
+            if event.content and event.content.parts:
+                for part in event.content.parts:
+                    if part.function_call:
+                        if part.function_call.name == REQUEST_CONFIRMATION_FUNCTION_CALL_NAME:
+                            pending_confirmations.append(part.function_call)
+                            paused_invocation_id = event.invocation_id
+                        elif show_tools:
+                            print(
+                                f"[tool -> {part.function_call.name}] "
+                                f"{part.function_call.args}"
+                            )
+                    if part.text:
+                        if event.author == COMPLEXITY_ANALYZER_NAME:
+                            if show_tools:
+                                print(f"[complexity] {part.text}")
+                        else:
+                            print(f"{event.author}: {part.text}")
+
+        if not pending_confirmations:
+            break
+
+        response_parts: list[types.Part] = []
+        for conf_call in pending_confirmations:
+            call_args = conf_call.args or {}
+            original_fc = call_args.get("originalFunctionCall") or {}
+            orig_name = str(original_fc.get("name") or "unknown_tool")
+            orig_args = dict(original_fc.get("args") or {})
+            tool_conf = call_args.get("toolConfirmation") or {}
+            hint = tool_conf.get("hint")
+
+            approved = confirm(orig_name, orig_args, hint)
+            response_parts.append(
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=conf_call.id,
+                        name=REQUEST_CONFIRMATION_FUNCTION_CALL_NAME,
+                        response={"confirmed": approved},
+                    )
+                )
             )
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if show_tools and part.function_call:
-                    print(f"[tool -> {part.function_call.name}] {part.function_call.args}")
-                if part.text:
-                    if event.author == COMPLEXITY_ANALYZER_NAME:
-                        if show_tools:
-                            print(f"[complexity] {part.text}")
-                    else:
-                        print(f"{event.author}: {part.text}")
+
+        next_message = types.Content(role="user", parts=response_parts)
+        resume_invocation_id = paused_invocation_id
 
 
 async def main() -> None:

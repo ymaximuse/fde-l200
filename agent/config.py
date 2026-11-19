@@ -64,6 +64,21 @@ class CompactionConfig(BaseModel):
     enabled: bool = Field(
         default=True, description="Enable ADK conversation context compaction."
     )
+    async_background: bool = Field(
+        default=True,
+        description=(
+            "Run compaction asynchronously in the background after turns instead "
+            "of blocking turns with ADK's synchronous post-invocation compactor."
+        ),
+    )
+    first_n_messages: int = Field(
+        default=6,
+        gt=0,
+        description=(
+            "Number of oldest uncompacted messages to summarize asynchronously "
+            "in the background once available."
+        ),
+    )
     model_name: str | None = Field(
         default=None,
         description="Optional summarizer model override; defaults to model.name.",

@@ -1,5 +1,6 @@
 """Offline tests for ADK agent graph integrity, App wiring, compaction, and JSON config."""
 
+import asyncio
 import inspect
 import json
 import unittest
@@ -9,8 +10,12 @@ from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.apps import App
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.models import BaseLlm, LlmResponse
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
 from google.adk.tools import AgentTool, FunctionTool
 from google.adk.tools import _function_tool_declarations as ftd
+from google.genai import types
 from pydantic import TypeAdapter
 
 from agent.agent import app as fde_app
@@ -21,7 +26,13 @@ from agent.plugins.compaction import (
     build_compaction_config,
 )
 from agent.schemas import ComplexityAssessment
-from agent.state import COMPLEXITY_STATE_KEY
+from agent.state import (
+    COMPLEXITY_STATE_KEY,
+    PERSONA_ID_STATE_KEY,
+    PROFILE_STATE_KEY,
+    load_noogler_profile,
+)
+from main import run_turn
 from agent.sub_agents import (
     COMPLEXITY_ANALYZER_NAME,
     duckie_proxy_agent,
@@ -109,7 +120,8 @@ class TestADKAgentGraphIntegrity(unittest.TestCase):
                     )
                     continue
 
-                wrapped = FunctionTool(tool) if callable(tool) else tool
+                wrapped = tool if isinstance(tool, FunctionTool) else FunctionTool(tool)
+                func = wrapped.func
                 decl = wrapped._get_declaration()
                 self.assertIsNotNone(decl)
                 self.assertTrue(decl.description, f"{decl.name}: missing description")
@@ -117,7 +129,7 @@ class TestADKAgentGraphIntegrity(unittest.TestCase):
                 # Check parameter JSON schema whenever the function exposes LLM parameters.
                 llm_params = [
                     name
-                    for name in inspect.signature(tool).parameters
+                    for name in inspect.signature(func).parameters
                     if name != "tool_context"
                 ]
                 if llm_params:
@@ -133,7 +145,7 @@ class TestADKAgentGraphIntegrity(unittest.TestCase):
 
                 # Verify full Pydantic response JSON schema directly via ADK's builder.
                 full_decl = ftd.build_function_declaration_with_json_schema(
-                    tool, ignore_params=["tool_context"]
+                    func, ignore_params=["tool_context"]
                 )
                 self.assertIsNotNone(
                     full_decl.response_json_schema,
@@ -234,6 +246,148 @@ class TestJsonConfig(unittest.TestCase):
         for tool in coordinator.tools:
             if isinstance(tool, AgentTool):
                 self.assertEqual(tool.agent.model, "gemini-2.5-flash-lite-custom")
+
+
+class _FakeLlm(BaseLlm):
+    responses: list[LlmResponse]
+    idx: int = 0
+
+    async def generate_content_async(self, llm_request, stream: bool = False):
+        resp = self.responses[self.idx]
+        self.idx += 1
+        yield resp
+
+
+class TestHumanConfirmationFlow(unittest.TestCase):
+    def test_switch_persona_tool_requires_confirmation_and_app_is_resumable(
+        self,
+    ) -> None:
+        self.assertIsNotNone(fde_app.resumability_config)
+        self.assertTrue(fde_app.resumability_config.is_resumable)
+
+        coordinator = root_agent.sub_agents[1]
+        persona_tools = [
+            t
+            for t in coordinator.tools
+            if isinstance(t, FunctionTool) and t.name == "switch_noogler_persona"
+        ]
+        self.assertEqual(len(persona_tools), 1)
+        self.assertTrue(persona_tools[0]._require_confirmation)
+
+    def _run_confirmation_scenario(self, *, approve: bool):
+        async def _scenario():
+            analyzer = LlmAgent(
+                name=COMPLEXITY_ANALYZER_NAME,
+                model=_FakeLlm(
+                    model="fake-lite",
+                    responses=[
+                        LlmResponse(
+                            content=types.Content(
+                                role="model",
+                                parts=[
+                                    types.Part.from_text(
+                                        text='{"complexity": "simple", "reason": "persona switch"}'
+                                    )
+                                ],
+                            )
+                        )
+                    ],
+                ),
+                output_schema=ComplexityAssessment,
+                output_key=COMPLEXITY_STATE_KEY,
+            )
+            coordinator = LlmAgent(
+                name="fde_duckie_coordinator",
+                model=_FakeLlm(
+                    model="fake-lite",
+                    responses=[
+                        LlmResponse(
+                            content=types.Content(
+                                role="model",
+                                parts=[
+                                    types.Part.from_function_call(
+                                        name="switch_noogler_persona",
+                                        args={"persona_id": "priya_fde"},
+                                    )
+                                ],
+                            )
+                        ),
+                        LlmResponse(
+                            content=types.Content(
+                                role="model",
+                                parts=[
+                                    types.Part.from_text(
+                                        text="Switched to priya_fde."
+                                        if approve
+                                        else "Cancelled persona switch."
+                                    )
+                                ],
+                            )
+                        ),
+                    ],
+                ),
+                tools=[FunctionTool(switch_noogler_persona, require_confirmation=True)],
+            )
+            test_root = SequentialAgent(
+                name="fde_duckie",
+                sub_agents=[analyzer, coordinator],
+                before_agent_callback=load_noogler_profile,
+            )
+            test_app = build_app(
+                root_agent=test_root,
+                name="agent",
+                config=AppConfig(compaction=CompactionConfig(enabled=False)),
+                plugins=[],
+            )
+            session_service = InMemorySessionService()
+            await session_service.create_session(
+                app_name="agent",
+                user_id="alex_noogler",
+                session_id="confirm-test",
+                state={PERSONA_ID_STATE_KEY: "alex_noogler"},
+            )
+
+            prompts: list[tuple[str, dict, str | None]] = []
+
+            def fake_confirm(tool_name: str, tool_args: dict, hint: str | None) -> bool:
+                prompts.append((tool_name, tool_args, hint))
+                return approve
+
+            async with Runner(
+                app=test_app, session_service=session_service
+            ) as runner:
+                await run_turn(
+                    runner,
+                    "alex_noogler",
+                    "confirm-test",
+                    "Switch my persona to priya_fde",
+                    confirm_fn=fake_confirm,
+                )
+
+            session = await session_service.get_session(
+                app_name="agent",
+                user_id="alex_noogler",
+                session_id="confirm-test",
+            )
+            return prompts, session
+
+        return asyncio.run(_scenario())
+
+    def test_confirmation_approved_executes_persona_switch(self) -> None:
+        prompts, session = self._run_confirmation_scenario(approve=True)
+        self.assertEqual(len(prompts), 1)
+        tool_name, tool_args, _ = prompts[0]
+        self.assertEqual(tool_name, "switch_noogler_persona")
+        self.assertEqual(tool_args, {"persona_id": "priya_fde"})
+        self.assertEqual(session.state[PROFILE_STATE_KEY]["persona_id"], "priya_fde")
+
+    def test_confirmation_rejected_blocks_persona_switch(self) -> None:
+        prompts, session = self._run_confirmation_scenario(approve=False)
+        self.assertEqual(len(prompts), 1)
+        tool_name, tool_args, _ = prompts[0]
+        self.assertEqual(tool_name, "switch_noogler_persona")
+        self.assertEqual(tool_args, {"persona_id": "priya_fde"})
+        self.assertEqual(session.state[PROFILE_STATE_KEY]["persona_id"], "alex_noogler")
 
 
 if __name__ == "__main__":

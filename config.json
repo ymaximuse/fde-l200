@@ -10,6 +10,8 @@
   },
   "compaction": {
     "enabled": true,
+    "async_background": true,
+    "first_n_messages": 6,
     "model_name": null,
     "interval": 5,
     "overlap_size": 1,

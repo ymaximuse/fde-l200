@@ -81,6 +81,7 @@ For `adk run agent` and `adk web`, `config.json` in the project root is loaded a
   ```bash
   uv run python main.py --config '{"security": {"model_armor": {"enabled": true, "prompt_template_name": "projects/MY_PROJECT/locations/us-central1/templates/MY_TEMPLATE"}}}'
   ```
+- **Human-in-the-Loop Tool Confirmation (`agent/agent.py` & `main.py`)**: `switch_noogler_persona` is wrapped in ADK's `FunctionTool(..., require_confirmation=True)` with `ResumabilityConfig(is_resumable=True)` on `App`. Before switching the active Noogler session identity, ADK pauses the invocation and requests explicit human approval (`adk_request_confirmation`), handled interactively in `main.py` (`[y/N]`) as well as natively in `adk web` / `adk run`.
 - **Structured Logging & OpenTelemetry (`agent/plugins/observability.py`)**: `ObservabilityPlugin` is attached to `app.plugins`, emitting single-line trace-correlated JSON logs (`trace_id`/`span_id`) for agent/tool events while ADK handles OTel spans natively. Configure `otel.exporter` as `none`, `console`, or `otlp`.
 
 ## Run
