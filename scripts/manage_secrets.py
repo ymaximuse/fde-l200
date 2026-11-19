@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agent.config import load_config  # noqa: E402
-from agent.secrets import DEFAULT_RUNTIME_SECRET_NAMES, create_secret_manager  # noqa: E402
+from agent.infra.secrets import DEFAULT_RUNTIME_SECRET_NAMES, create_secret_manager  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

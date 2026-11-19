@@ -11,6 +11,7 @@ from .onboarding_tools import (
     get_setup_checklist,
     get_team_contacts,
 )
+from .persona_tools import switch_noogler_persona
 
 __all__ = [
     "check_l400_eligibility",
@@ -19,5 +20,6 @@ __all__ = [
     "get_setup_checklist",
     "get_team_contacts",
     "query_duckie",
+    "switch_noogler_persona",
     "update_enablement_progress",
 ]

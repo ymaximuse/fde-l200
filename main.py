@@ -8,10 +8,11 @@ from google.genai import types
 
 from agent.agent import create_app
 from agent.config import load_config, set_config
-from agent.db import configure_storage
-from agent.observability import configure_logging, configure_otel
-from agent.secrets import hydrate_runtime_secrets
+from agent.infra.db import configure_storage
+from agent.infra.secrets import hydrate_runtime_secrets
+from agent.plugins.observability import configure_logging, configure_otel
 from agent.state import PERSONA_ID_STATE_KEY, list_persona_ids
+from agent.sub_agents.complexity_analyzer_agent import COMPLEXITY_ANALYZER_NAME
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +83,11 @@ async def run_turn(
                 if show_tools and part.function_call:
                     print(f"[tool -> {part.function_call.name}] {part.function_call.args}")
                 if part.text:
-                    print(f"{event.author}: {part.text}")
+                    if event.author == COMPLEXITY_ANALYZER_NAME:
+                        if show_tools:
+                            print(f"[complexity] {part.text}")
+                    else:
+                        print(f"{event.author}: {part.text}")
 
 
 async def main() -> None:
@@ -133,11 +138,19 @@ async def main() -> None:
                 )
                 return
 
+            routing_status = (
+                f"on->{cfg.model_routing.capable_model}"
+                if cfg.model_routing.enabled
+                else "off"
+            )
             print(
-                f"FDE Duckie ready (model={cfg.model.name}, persona={user_id}, "
+                f"FDE Duckie ready (model={cfg.model.name}, routing={routing_status}, "
+                f"persona={user_id}, "
                 f"session={session.id} [{'resumed' if resumed else 'new'}], "
                 f"db={cfg.database.backend}, "
                 f"compaction={'on' if cfg.compaction.enabled else 'off'}, "
+                f"pii={'on' if cfg.pii.enabled else 'off'}, "
+                f"model_armor={'on' if cfg.security.model_armor.enabled else 'off'}, "
                 f"otel={cfg.otel.exporter}). "
                 "Type '/exit' or Ctrl-D to quit."
             )

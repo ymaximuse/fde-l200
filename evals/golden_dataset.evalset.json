@@ -1,0 +1,560 @@
+{
+  "eval_set_id": "fde_duckie_golden_v1",
+  "name": "FDE Duckie Golden Offline Eval Set",
+  "description": "Curated golden dataset covering enablement tracking, L400 gating, stateful multi-turn L300 progress updates, Day-1 setup & 30/60/90 ramp guidance, team contacts, Duckie general Q&A proxy, compound multi-specialist routing, and persona switching across all 3 FDE Noogler personas.",
+  "eval_cases": [
+    {
+      "eval_id": "alex_l400_blocked",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "alex_l400_blocked_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Can I register for L400 Bootcamp yet?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Check whether the active Noogler is eligible to register for L400 Bootcamp."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "You are not eligible to register for L400 Bootcamp yet — it is currently blocked.\n\n- **Blockers**: You still need to finish L200 (submit your Final Project Assessment in Exceed LMS) and complete at least 6 of 7 GEAP L300 Challenge Labs (currently 0/7 completed).\n- **Next steps**: Finish L200 first, then complete 6 L300 labs at goo.gle/cps and track your status on go/fde-enablement-dash."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "priya_l400_blocked_4_of_6",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "priya_fde",
+        "state": {
+          "noogler_id": "priya_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "priya_l400_blocked_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Am I eligible for L400 Bootcamp right now?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Check L400 Bootcamp eligibility and remaining prerequisites for the active Noogler."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Not yet — your L400 Bootcamp registration is currently blocked.\n\n- **L300 progress**: You have completed 4 of 7 challenge labs and need 2 more labs to reach the required 6/7 threshold.\n- **Next steps**: Complete 2 more L300 labs at goo.gle/cps, then check go/fde-enablement-dash to unlock L400 registration."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "priya_update_l300_unlocks_l400",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "priya_fde",
+        "state": {
+          "noogler_id": "priya_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "priya_update_l300_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Mark my L300 labs as 6 completed."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Update L300 enablement progress to 6 completed labs."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Updated your L300 progress to 6 of 7 challenge labs completed. L300 is now marked completed, which removes the prerequisite blocker for L400 Bootcamp."
+              }
+            ]
+          }
+        },
+        {
+          "invocation_id": "priya_update_l300_t2",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Am I eligible for L400 now?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Check L400 Bootcamp eligibility now that L300 has 6 completed labs."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Yes, you are now eligible to register for L400 Bootcamp! With L200 completed and 6 of 7 L300 challenge labs done, there are no remaining blockers. Check go/fde-enablement-dash to book your L400 cohort."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "jordan_pca_at_risk",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "jordan_fde",
+        "state": {
+          "noogler_id": "jordan_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "jordan_pca_at_risk_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "What is my PCA certification status and am I on track?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Check PCA certification status and pacing for the active Noogler."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Your Google Professional Cloud Architect (PCA) certification is currently **in progress** and paced as **at risk**.\n\n- **Pacing**: At Day 70, you are past the Day 60 target window and approaching the Day 90 hard deadline.\n- **Action**: Book your PCA exam soon via go/cloudu so you complete it well before Day 90."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "dashboard_sync_delay_faq",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "priya_fde",
+        "state": {
+          "noogler_id": "priya_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "dashboard_sync_delay_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "I finished a lab yesterday but it is not showing up on go/fde-enablement-dash yet. Why?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Explain go/fde-enablement-dash sync delays and check current enablement status."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Exceed LMS and Challenge Lab credits can take up to 24 hours to sync to go/fde-enablement-dash. If your completed lab is still missing after 24 hours, follow the re-enrollment troubleshooting steps in go/fde-dash-faq."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "alex_next_actions",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "alex_next_actions_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "What should I focus on next?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "onboarding_guide_agent",
+                "args": {
+                  "request": "Get prioritized next recommended actions for the active Noogler."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Here are your top priorities for Day 12:\n\n1. **Finish Argolis setup** (go/argolis) — complete the remaining quiz and 2 Qwiklabs so approval isn't delayed.\n2. **Register for FDE GitHub** (go/fde-github) — request access to the cloud-ai-fde organization.\n3. **Complete GEAP L200** (go/fde-enablement-dash) — submit your Final Project Assessment in Exceed LMS before Day 30."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "alex_team_contacts",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "alex_team_contacts_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Who is my onboarding buddy and pod manager, and which FDE Chat spaces should I join?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "onboarding_guide_agent",
+                "args": {
+                  "request": "Look up the active Noogler's onboarding buddy, pod manager, and FDE Google Chat spaces."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Here are your team contacts and chat spaces for Applied AI FDE - NorthAm Pod A:\n\n- **Pod Manager**: maya_chen (maya_chen@)\n- **Onboarding Buddy**: devon_patel (devon_patel@)\n- **Key FDE Chat Spaces**: AI Tech GTM All, Global GenAI FDE Chat, and your Regional / Vertical Pod Space (see go/fde-noogler-guide)."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "priya_ramp_milestones",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "priya_fde",
+        "state": {
+          "noogler_id": "priya_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "priya_ramp_milestones_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "What are the 30/60/90-day FDE ramp milestones?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "onboarding_guide_agent",
+                "args": {
+                  "request": "Retrieve the 30/60/90-day FDE ramp milestones."
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Here are the 30/60/90-day FDE ramp milestones:\n\n- **Days 1-30 (Setup & Foundations)**: Workstation, Argolis, go/fde-github, and GEAP L200.\n- **Days 31-60 (Deep Enablement & Capstone)**: Complete 6/7 L300 Challenge Labs, attend L400 Bootcamp, pass PCA certification, and complete the 10-day FDE Capstone Project and Field-Readiness Panel Defense.\n- **Days 61-90 (Customer Co-Build)**: Join an active customer co-build engagement and ensure all required enablement items are green on go/fde-enablement-dash."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "general_benefits_duckie",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "general_benefits_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "How do I enroll in health benefits on gBenefits?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "duckie_proxy_agent",
+                "args": {
+                  "request": "How do I enroll in health benefits on gBenefits?"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "You can view and enroll in Google health, dental, 401k, and perks through go/gbenefits (also linked from go/workday). New hires typically have 30 days from their start date to complete initial elections. *(Forwarded via Duckie stub/mock mode.)*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "general_piper_citc_duckie",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "priya_fde",
+        "state": {
+          "noogler_id": "priya_fde"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "general_piper_citc_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "How do Piper, CitC, and Critique work at Google?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "duckie_proxy_agent",
+                "args": {
+                  "request": "How do Piper, CitC, and Critique work at Google?"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Google's monorepo (google3) uses Piper and CitC workspaces, accessed via Fig (hg) or Jujutsu (jj), with code review in Critique. See go/citc, go/fig, and go/critique. *(Forwarded via Duckie stub/mock mode.)*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "compound_enablement_and_corp_card",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "compound_l200_corp_card_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Check my L200 status and how do I apply for a corporate credit card?"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "enablement_agent",
+                "args": {
+                  "request": "Check L200 enablement status for the active Noogler."
+                }
+              },
+              {
+                "name": "duckie_proxy_agent",
+                "args": {
+                  "request": "How do I apply for a Google corporate credit card?"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "**L200 Status**: Your GEAP L200 track is **in progress** (due Day 30). Your modules are complete, and you still need to submit the Final Project Assessment in Exceed LMS (go/fde-enablement-dash).\n\n**Corporate Credit Card**: Apply for your Google corporate credit card via go/getcard before booking travel such as L400 Bootcamp travel. *(Forwarded via Duckie stub/mock mode.)*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "switch_persona_to_jordan",
+      "session_input": {
+        "app_name": "agent",
+        "user_id": "alex_noogler",
+        "state": {
+          "noogler_id": "alex_noogler"
+        }
+      },
+      "conversation": [
+        {
+          "invocation_id": "switch_persona_t1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Switch my persona to jordan_fde."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "switch_noogler_persona",
+                "args": {
+                  "persona_id": "jordan_fde"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Switched your active Noogler persona to **Jordan Lee** (`jordan_fde`, Day 70, Applied AI FDE - EMEA Pod C)."
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

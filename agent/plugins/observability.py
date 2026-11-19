@@ -20,22 +20,31 @@ from opentelemetry.sdk.trace.export import (
 )
 
 from agent.config import AppConfig, get_config
+from agent.plugins.pii import PiiScrubber
 
 LOGGER_NAME = "fde_duckie"
 logger = logging.getLogger(LOGGER_NAME)
 
 
 class JsonFormatter(logging.Formatter):
-    """Single-line JSON log formatter with automatic OTel trace correlation."""
+    """Single-line JSON log formatter with automatic OTel trace correlation and optional PII scrubbing."""
+
+    def __init__(self, *, scrubber: PiiScrubber | None = None) -> None:
+        super().__init__()
+        self._scrubber = scrubber
 
     def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        if self._scrubber is not None:
+            message = self._scrubber.scrub_text(message)
+
         payload: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(
                 record.created, tz=timezone.utc
             ).isoformat(),
             "severity": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": message,
         }
 
         span_ctx = trace.get_current_span().get_span_context()
@@ -45,10 +54,16 @@ class JsonFormatter(logging.Formatter):
 
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
-            payload.update({k: v for k, v in fields.items() if v is not None})
+            cleaned_fields = {k: v for k, v in fields.items() if v is not None}
+            if self._scrubber is not None:
+                cleaned_fields = self._scrubber.scrub_value(cleaned_fields)
+            payload.update(cleaned_fields)
 
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            exc_text = self.formatException(record.exc_info)
+            if self._scrubber is not None:
+                exc_text = self._scrubber.scrub_text(exc_text)
+            payload["exception"] = exc_text
 
         return json.dumps(payload, default=str, ensure_ascii=False)
 
@@ -59,10 +74,15 @@ def configure_logging(
     level: str | None = None,
     stream: TextIO | None = None,
     logger_name: str = LOGGER_NAME,
+    scrubber: PiiScrubber | None = None,
 ) -> logging.Logger:
     """Configure the FDE Duckie logger to emit structured JSON lines to stderr."""
     cfg = config or get_config()
     numeric_level = getattr(logging, (level or cfg.logging.level).upper(), logging.INFO)
+
+    active_scrubber = scrubber
+    if active_scrubber is None and cfg.pii.enabled:
+        active_scrubber = PiiScrubber(cfg.pii)
 
     target = logging.getLogger(logger_name)
     target.setLevel(numeric_level)
@@ -70,7 +90,7 @@ def configure_logging(
 
     handler = logging.StreamHandler(stream or sys.stderr)
     handler.setLevel(numeric_level)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonFormatter(scrubber=active_scrubber))
 
     target.handlers.clear()
     target.addHandler(handler)

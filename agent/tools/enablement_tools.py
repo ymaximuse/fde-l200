@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from google.adk.tools import ToolContext
 from pydantic import Field
 
-from agent.backends import get_knowledge_base
+from agent.infra.backends import get_knowledge_base
 from agent.schemas import (
     EnablementStatusResult,
     EnablementTrackFilter,

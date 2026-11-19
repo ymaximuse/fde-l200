@@ -14,7 +14,7 @@ from typing import Literal
 
 from dotenv import load_dotenv
 from google.genai import types
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 load_dotenv()
 
@@ -39,6 +39,23 @@ class ModelConfig(BaseModel):
 
     def to_generate_content_config(self) -> types.GenerateContentConfig:
         return types.GenerateContentConfig(temperature=self.temperature)
+
+
+class ModelRoutingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable state-based model routing (reads request_complexity from session "
+            "state and escalates from model.name to capable_model when 'complex')."
+        ),
+    )
+    capable_model: str = Field(
+        default="gemini-2.5-flash",
+        min_length=1,
+        description="Higher-capability Gemini model (non-lite) used when complexity is 'complex'.",
+    )
 
 
 class CompactionConfig(BaseModel):
@@ -135,6 +152,53 @@ class SecretsConfig(BaseModel):
     )
 
 
+class PiiConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable regex PII redaction across agent I/O, tools, and logs.",
+    )
+
+
+class ModelArmorSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Attach Gemini inline Model Armor template(s) to LLM requests (Vertex AI).",
+    )
+    prompt_template_name: str | None = Field(
+        default=None,
+        description=(
+            "Model Armor template resource name for prompt screening: "
+            "projects/{project}/locations/{location}/templates/{template}."
+        ),
+    )
+    response_template_name: str | None = Field(
+        default=None,
+        description=(
+            "Model Armor template resource name for response screening: "
+            "projects/{project}/locations/{location}/templates/{template}."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _require_template_when_enabled(self) -> "ModelArmorSettings":
+        if self.enabled and not (self.prompt_template_name or self.response_template_name):
+            raise ValueError(
+                "security.model_armor.enabled=true requires at least one of "
+                "'prompt_template_name' or 'response_template_name'."
+            )
+        return self
+
+
+class SecurityConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_armor: ModelArmorSettings = Field(default_factory=ModelArmorSettings)
+
+
 class AppConfig(BaseModel):
     """Top-level validated JSON configuration for FDE Duckie."""
 
@@ -146,11 +210,14 @@ class AppConfig(BaseModel):
         description="Default FDE Noogler persona ID loaded at session start.",
     )
     model: ModelConfig = Field(default_factory=ModelConfig)
+    model_routing: ModelRoutingConfig = Field(default_factory=ModelRoutingConfig)
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     otel: OtelConfig = Field(default_factory=OtelConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    pii: PiiConfig = Field(default_factory=PiiConfig)
 
     @property
     def compaction_model_name(self) -> str:

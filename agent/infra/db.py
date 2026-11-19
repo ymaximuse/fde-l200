@@ -13,7 +13,7 @@ from typing import Any, Iterator
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.adk.sessions.sqlite_session_service import SqliteSessionService
 
-from agent.backends import set_profile_store
+from agent.infra.backends import set_profile_store
 from agent.config import PROJECT_ROOT, AppConfig, get_config
 from agent.mocks import MockNooglerProfileStore
 

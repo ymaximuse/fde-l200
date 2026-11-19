@@ -1,17 +1,23 @@
-"""Root coordinator and ADK App (with context compaction & observability) for FDE Duckie."""
+"""Root coordinator and ADK App composition root for FDE Duckie."""
 
-from google.adk.agents import LlmAgent
+from __future__ import annotations
+
+from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.apps.app import App
+from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
+from google.adk.plugins import BasePlugin
 from google.adk.tools import AgentTool
 
-from agent.compaction import build_app
 from agent.config import AppConfig, get_config
-from agent.state import load_noogler_profile, switch_noogler_persona
+from agent.plugins import build_compaction_config, build_plugins
+from agent.state import load_noogler_profile
 from agent.sub_agents import (
+    create_complexity_analyzer_agent,
     create_duckie_proxy_agent,
     create_enablement_agent,
     create_onboarding_guide_agent,
 )
+from agent.tools.persona_tools import switch_noogler_persona
 
 COORDINATOR_INSTRUCTION = """You are **FDE Duckie**, the onboarding assistant for new Google Forward Deployed Engineers (FDE Nooglers).
 {noogler_summary?}
@@ -32,13 +38,13 @@ Rules:
 """
 
 
-def create_root_agent(config: AppConfig | None = None) -> LlmAgent:
+def create_coordinator_agent(config: AppConfig | None = None) -> LlmAgent:
     cfg = config or get_config()
     return LlmAgent(
-        name="fde_duckie",
+        name="fde_duckie_coordinator",
         model=cfg.model.name,
         description=(
-            "FDE Duckie root coordinator for Google FDE Noogler onboarding: routes "
+            "FDE Duckie coordinator for Google FDE Noogler onboarding: routes "
             "between FDE Enablement, Setup/Ramp Guide, and General Duckie (stub)."
         ),
         instruction=COORDINATOR_INSTRUCTION,
@@ -48,14 +54,64 @@ def create_root_agent(config: AppConfig | None = None) -> LlmAgent:
             AgentTool(agent=create_duckie_proxy_agent(cfg)),
             switch_noogler_persona,
         ],
-        before_agent_callback=load_noogler_profile,
         generate_content_config=cfg.model.to_generate_content_config(),
     )
 
 
-def create_app(config: AppConfig | None = None, *, name: str = "agent") -> App:
+def create_root_agent(config: AppConfig | None = None) -> SequentialAgent:
     cfg = config or get_config()
-    return build_app(root_agent=create_root_agent(cfg), name=name, config=cfg)
+    return SequentialAgent(
+        name="fde_duckie",
+        description=(
+            "FDE Duckie sequential onboarding pipeline: step 1 classifies request "
+            "complexity into session state for model routing; step 2 coordinates "
+            "FDE Enablement, Setup/Ramp Guide, and General Duckie specialists."
+        ),
+        sub_agents=[
+            create_complexity_analyzer_agent(cfg),
+            create_coordinator_agent(cfg),
+        ],
+        before_agent_callback=load_noogler_profile,
+    )
+
+
+def build_app(
+    *,
+    root_agent: BaseAgent,
+    name: str = "agent",
+    config: AppConfig | None = None,
+    summarizer: BaseEventsSummarizer | None = None,
+    plugins: list[BasePlugin] | None = None,
+) -> App:
+    """Construct the ADK App wrapping root_agent with compaction, security, PII redaction, and observability."""
+    cfg = config or get_config()
+    active_plugins = plugins if plugins is not None else build_plugins(cfg)
+    return App(
+        name=name,
+        root_agent=root_agent,
+        plugins=active_plugins,
+        events_compaction_config=build_compaction_config(
+            config=cfg,
+            summarizer=summarizer,
+        ),
+    )
+
+
+def create_app(
+    config: AppConfig | None = None,
+    *,
+    name: str = "agent",
+    summarizer: BaseEventsSummarizer | None = None,
+    plugins: list[BasePlugin] | None = None,
+) -> App:
+    cfg = config or get_config()
+    return build_app(
+        root_agent=create_root_agent(cfg),
+        name=name,
+        config=cfg,
+        summarizer=summarizer,
+        plugins=plugins,
+    )
 
 
 # Default module-level exports discovered by `adk run agent` and `adk web`.

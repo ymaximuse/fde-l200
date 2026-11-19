@@ -4,6 +4,10 @@
     "name": "gemini-2.5-flash-lite",
     "temperature": 0.1
   },
+  "model_routing": {
+    "enabled": true,
+    "capable_model": "gemini-2.5-flash"
+  },
   "compaction": {
     "enabled": true,
     "model_name": null,
@@ -30,5 +34,15 @@
     "vault_path": "fde-duckie",
     "vault_namespace": null,
     "gcp_project_id": null
+  },
+  "pii": {
+    "enabled": true
+  },
+  "security": {
+    "model_armor": {
+      "enabled": false,
+      "prompt_template_name": null,
+      "response_template_name": null
+    }
   }
 }

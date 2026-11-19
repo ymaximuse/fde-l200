@@ -1,14 +1,13 @@
-"""ADK context compaction configuration and App builder for FDE Duckie."""
+"""ADK context compaction configuration for FDE Duckie."""
 
 from __future__ import annotations
 
-from google.adk.apps.app import App, EventsCompactionConfig
+from google.adk.apps.app import EventsCompactionConfig
 from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.models import Gemini
 
 from agent.config import AppConfig, get_config
-from agent.observability import ObservabilityPlugin
 
 FDE_COMPACTION_PROMPT_TEMPLATE = (
     "You are compacting conversation history for FDE Duckie, an onboarding "
@@ -45,26 +44,4 @@ def build_compaction_config(
         overlap_size=cfg.compaction.overlap_size,
         token_threshold=cfg.compaction.token_threshold,
         event_retention_size=cfg.compaction.event_retention_size,
-    )
-
-
-def build_app(
-    *,
-    root_agent,
-    name: str = "agent",
-    config: AppConfig | None = None,
-    summarizer: BaseEventsSummarizer | None = None,
-    plugins: list | None = None,
-) -> App:
-    """Construct the ADK App wrapping root_agent with compaction and observability."""
-    cfg = config or get_config()
-    active_plugins = plugins if plugins is not None else [ObservabilityPlugin()]
-    return App(
-        name=name,
-        root_agent=root_agent,
-        plugins=active_plugins,
-        events_compaction_config=build_compaction_config(
-            config=cfg,
-            summarizer=summarizer,
-        ),
     )

@@ -2,9 +2,11 @@
 
 Multi-agent Google ADK onboarding assistant for new Google Forward Deployed Engineers (**FDE Nooglers**), designed specifically to run reliably on small models (**Gemini Flash-Lite**).
 
-## Architecture (Flash-Lite-First Hub-and-Spoke)
+## Architecture (Sequential Complexity Routing + Hub-and-Spoke)
 
-`fde_duckie` (root coordinator) dispatches via ADK `AgentTool` to 3 narrow specialist agents, keeping tool counts tiny (1–3 tools per specialist), preventing transfer loops, and handling multi-domain compound queries in a single turn:
+`fde_duckie` is an ADK `SequentialAgent` with two steps:
+1. **`complexity_analyzer_agent`** (always `gemini-2.5-flash-lite`) — Classifies each incoming turn as `simple` or `complex` (`ComplexityAssessment`) and stores the result in `session.state["request_complexity"]`.
+2. **`fde_duckie_coordinator`** — Dispatches via ADK `AgentTool` to 3 narrow specialist agents, keeping tool counts tiny (1–3 tools per specialist), preventing transfer loops, and handling multi-domain compound queries in a single turn:
 
 1. **`enablement_agent`** — Checks & updates FDE enablement prerequisites (**L200**, **L300** [6/7 labs], **L400 Bootcamp** [blocked until L300 is complete], **PCA**, plus optional **GAIL**/**CDL**), computes pacing (`on_track` / `at_risk` / `overdue`), and explains `go/fde-enablement-dash` sync delays.
 2. **`onboarding_guide_agent`** — Guides Day-1 setup (**Cloudtop**, **Argolis**, `go/fde-github`), 30/60/90-day ramp milestones, pod/buddy/Chat contacts, and deterministic **"What should I do next?"** prioritization.
@@ -20,7 +22,7 @@ cp .env.example .env                # set GOOGLE_API_KEY (or Vertex AI credentia
 uv run python scripts/setup_db.py   # initialize & seed local SQLite DB (data/fde_duckie.db)
 ```
 
-### Local SQLite Persistence (`agent/db.py` & `scripts/setup_db.py`)
+### Local SQLite Persistence (`agent/infra/db.py` & `scripts/setup_db.py`)
 
 By default (`database.backend="sqlite"`, `database.url="sqlite:///data/fde_duckie.db"` in `config.json`), FDE Duckie persists both **ADK session state + conversation history** (via ADK's native `SqliteSessionService`) and **Noogler profile updates** (`noogler_profiles` table) in a local SQLite database:
 
@@ -39,7 +41,7 @@ uv run adk web --session_service_uri sqlite:///data/fde_duckie.db
 
 Set `"database": {"backend": "memory"}` in `--config` for ephemeral in-memory runs, or `"backend": "database"` with a SQLAlchemy URI (`google-adk[db]`) for Postgres/MySQL.
 
-### HashiCorp Vault Secrets (`agent/secrets.py` & `scripts/manage_secrets.py`)
+### HashiCorp Vault Secrets (`agent/infra/secrets.py` & `scripts/manage_secrets.py`)
 
 By default (`secrets.backend="vault"` in `config.json`), FDE Duckie fetches runtime secrets (`GOOGLE_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`) from **HashiCorp Vault KV v2** (`VAULT_ADDR`, `VAULT_TOKEN` / `~/.vault-token`), with seamless fallback to `.env` if Vault is not running:
 
@@ -70,10 +72,16 @@ uv run python main.py --config '{"default_user": "priya_fde", "otel": {"exporter
 
 For `adk run agent` and `adk web`, `config.json` in the project root is loaded automatically, or set `FDE_DUCKIE_CONFIG=path/to/config.json` in `.env`.
 
-### Context Compaction & Observability
+### Context Compaction, Model Routing, Security & Observability (`agent/plugins/`)
 
-- **Context Compaction (`agent/compaction.py`)**: Enabled by default via ADK `App` + `EventsCompactionConfig` using a Flash-Lite `LlmEventSummarizer` with both sliding-window (`interval: 5`, `overlap_size: 1`) and token-threshold (`token_threshold: 8000`, `event_retention_size: 2`) triggers.
-- **Structured Logging & OpenTelemetry (`agent/observability.py`)**: `ObservabilityPlugin` is attached to `app.plugins`, emitting single-line trace-correlated JSON logs (`trace_id`/`span_id`) for agent/tool events while ADK handles OTel spans natively. Configure `otel.exporter` as `none`, `console`, or `otlp`.
+- **Strategic Model Routing (`agent/plugins/routing.py`)**: Enabled by default (`model_routing.enabled: true` in `config.json`) via `ModelRoutingPlugin`. Reads `session.state["request_complexity"]` (populated by step-1 `complexity_analyzer_agent`) in `before_model_callback` and routes `simple` requests to `gemini-2.5-flash-lite` (`model.name`) and `complex` requests to `gemini-2.5-flash` (`model_routing.capable_model`), while keeping `complexity_analyzer_agent` pinned to Flash-Lite. Emits structured `model.routed` logs and OTel span attributes.
+- **Context Compaction (`agent/plugins/compaction.py`)**: Enabled by default via ADK `App` (`agent/agent.py`) + `EventsCompactionConfig` using a Flash-Lite `LlmEventSummarizer` with both sliding-window (`interval: 5`, `overlap_size: 1`) and token-threshold (`token_threshold: 8000`, `event_retention_size: 2`) triggers.
+- **PII Redaction & Scrubbing (`agent/plugins/pii.py`)**: Enabled by default (`pii.enabled: true` in `config.json`) via `PiiRedactionPlugin` and `JsonFormatter` log scrubbing. Uses lightweight regexes to redact `EMAIL`, `PHONE`, `SSN`, `CREDIT_CARD`, and `API_KEY` across user inputs, tool results, model responses/events, and structured JSON logs.
+- **Gemini Model Armor (`agent/plugins/security.py`)**: `ModelArmorPlugin` (opt-in for Vertex AI) attaches Gemini inline `types.ModelArmorConfig` (`prompt_template_name` / `response_template_name`) to every LLM request and returns a safe fallback on `SAFETY`/`PROHIBITED_CONTENT`/`BLOCKLIST`/`SPII` blocks. Enable via `--config`:
+  ```bash
+  uv run python main.py --config '{"security": {"model_armor": {"enabled": true, "prompt_template_name": "projects/MY_PROJECT/locations/us-central1/templates/MY_TEMPLATE"}}}'
+  ```
+- **Structured Logging & OpenTelemetry (`agent/plugins/observability.py`)**: `ObservabilityPlugin` is attached to `app.plugins`, emitting single-line trace-correlated JSON logs (`trace_id`/`span_id`) for agent/tool events while ADK handles OTel spans natively. Configure `otel.exporter` as `none`, `console`, or `otlp`.
 
 ## Run
 
@@ -102,13 +110,13 @@ uv run adk web
 
 ## Mocked Backends (`agent/mocks/`)
 
-All mocked/faked data and stubs are isolated inside `agent/mocks/` and wired through protocol interfaces in `agent/backends.py`:
+All mocked/faked data and stubs are isolated inside `agent/mocks/` and wired through protocol interfaces in `agent/infra/backends.py`:
 
 - `agent/mocks/duckie.py` (`StubDuckieClient`) — stand-in for real Duckie MCP/RPC (`go/duckie`).
 - `agent/mocks/profile_store.py` (`MockNooglerProfileStore`) + `agent/mocks/data/noogler_profiles.json` — stand-in for `go/fde-enablement-dash` & Pod Onboarding Tracker.
 - `agent/mocks/knowledge_base.py` (`MockFdeKnowledgeBase`) + `agent/mocks/data/fde_kb.json` — stand-in for grounded FDE g3doc / Vertex AI Search.
 
-To wire real integrations later, call `set_duckie_client`, `set_profile_store`, or `set_knowledge_base` in `agent/backends.py`.
+To wire real integrations later, call `set_duckie_client`, `set_profile_store`, or `set_knowledge_base` in `agent/infra/backends.py`.
 
 ### Pre-seeded Mock Personas
 
@@ -116,10 +124,22 @@ To wire real integrations later, call `set_duckie_client`, `set_profile_store`, 
 - `priya_fde` (Day 42) — Setup & L200 complete, L300 at 4/7 labs (needs 2 more to unlock L400), PCA in progress.
 - `jordan_fde` (Day 70) — L200, L300 (6/7), and L400 complete; PCA at risk past Day 60 pacing target.
 
-## Tests
+## Tests & Offline Golden Evaluation
 
 Run offline unit tests (no API key required):
 
 ```bash
 uv run python -m unittest discover -s tests -v
+```
+
+### Automated Golden Dataset Offline Eval (`evals/` & `scripts/run_eval.py`)
+
+A 12-case golden dataset in native Google ADK `EvalSet` format (`evals/golden_dataset.evalset.json`) + `EvalConfig` (`evals/test_config.json`) evaluates tool routing (`tool_trajectory_avg_score`) and response quality (`response_match_score`) across all 3 personas and specialists:
+
+```bash
+# Run via scripts/run_eval.py (loads config.json + Vault/.env secrets)
+uv run python scripts/run_eval.py --config config.json
+
+# Or directly via Google ADK's CLI
+uv run adk eval agent evals/golden_dataset.evalset.json --config_file_path evals/test_config.json
 ```

@@ -28,7 +28,7 @@ from google.adk.sessions.sqlite_session_service import SqliteSessionService  # n
 from google.genai import types  # noqa: E402
 
 from agent.config import load_config  # noqa: E402
-from agent.db import SqliteNooglerProfileStore, resolve_sqlite_path  # noqa: E402
+from agent.infra.db import SqliteNooglerProfileStore, resolve_sqlite_path  # noqa: E402
 from agent.state import (  # noqa: E402
     PERSONA_ID_STATE_KEY,
     PROFILE_STATE_KEY,

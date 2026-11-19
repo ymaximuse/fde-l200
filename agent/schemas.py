@@ -18,6 +18,7 @@ SetupCategoryFilter = Literal[
 ]
 PersonaId = Literal["alex_noogler", "priya_fde", "jordan_fde"]
 ToolOutcome = Literal["ok", "error", "blocked"]
+ComplexityLevel = Literal["simple", "complex"]
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +137,22 @@ class DuckieProxyInput(BaseModel):
             "General, non-FDE-specific Google question to forward to Duckie "
             "(e.g., Workday, gBenefits, PTO, corporate card, Piper/CitC, go/wtf)."
         ),
+    )
+
+
+class ComplexityAssessment(BaseModel):
+    """Structured complexity classification written to session state by step 1."""
+
+    complexity: ComplexityLevel = Field(
+        description=(
+            "'simple' for greetings or single-domain lookups/updates; "
+            "'complex' for multi-domain compound queries, comparisons, planning, "
+            "or troubleshooting."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description="Short one-line reason for the complexity classification.",
     )
 
 

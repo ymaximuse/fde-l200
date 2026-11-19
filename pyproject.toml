@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fde-l200"
 version = "0.1.0"
-description = "Barebones Google ADK Python project"
+description = "FDE Duckie — Multi-agent Google ADK onboarding assistant for FDE Nooglers"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

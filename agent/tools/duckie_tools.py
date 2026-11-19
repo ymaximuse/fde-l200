@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from agent.backends import get_duckie_client
+from agent.infra.backends import get_duckie_client
 from agent.schemas import DuckieToolResult
 
 
