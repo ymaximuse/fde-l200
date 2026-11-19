@@ -211,12 +211,18 @@ async def main() -> None:
                 if cfg.model_routing.enabled
                 else "off"
             )
+            if not cfg.compaction.enabled:
+                compaction_status = "off"
+            elif cfg.compaction.async_background:
+                compaction_status = f"async(first={cfg.compaction.first_n_messages})"
+            else:
+                compaction_status = "sync"
             print(
                 f"FDE Duckie ready (model={cfg.model.name}, routing={routing_status}, "
                 f"persona={user_id}, "
                 f"session={session.id} [{'resumed' if resumed else 'new'}], "
                 f"db={cfg.database.backend}, "
-                f"compaction={'on' if cfg.compaction.enabled else 'off'}, "
+                f"compaction={compaction_status}, "
                 f"pii={'on' if cfg.pii.enabled else 'off'}, "
                 f"model_armor={'on' if cfg.security.model_armor.enabled else 'off'}, "
                 f"otel={cfg.otel.exporter}). "

@@ -22,8 +22,10 @@ from agent.agent import app as fde_app
 from agent.agent import build_app, create_app, root_agent
 from agent.config import AppConfig, CompactionConfig, get_config, load_config
 from agent.plugins.compaction import (
+    AsyncCompactionPlugin,
     FDE_COMPACTION_PROMPT_TEMPLATE,
     build_compaction_config,
+    build_compaction_plugins,
 )
 from agent.schemas import ComplexityAssessment
 from agent.state import (
@@ -177,33 +179,63 @@ class TestADKAgentGraphIntegrity(unittest.TestCase):
 
 
 class TestContextCompaction(unittest.TestCase):
-    def test_app_exposes_flash_lite_compaction_config(self) -> None:
+    def test_app_exposes_async_background_compaction_by_default(self) -> None:
         self.assertIsInstance(fde_app, App)
         self.assertEqual(fde_app.name, "agent")
         self.assertIs(fde_app.root_agent, root_agent)
 
-        cfg = fde_app.events_compaction_config
+        # Default mode uses AsyncCompactionPlugin (non-blocking) instead of ADK's
+        # synchronous events_compaction_config.
+        self.assertIsNone(fde_app.events_compaction_config)
+        compaction_plugins = [
+            p for p in fde_app.plugins if isinstance(p, AsyncCompactionPlugin)
+        ]
+        self.assertEqual(len(compaction_plugins), 1)
+        self.assertIsInstance(compaction_plugins[0].summarizer, LlmEventSummarizer)
+        self.assertEqual(
+            compaction_plugins[0].first_n_messages,
+            get_config().compaction.first_n_messages,
+        )
+        self.assertIn("{conversation_history}", FDE_COMPACTION_PROMPT_TEMPLATE)
+
+    def test_sync_compaction_fallback_when_async_background_disabled(self) -> None:
+        sync_cfg = AppConfig(
+            compaction=CompactionConfig(enabled=True, async_background=False)
+        )
+        self.assertEqual(build_compaction_plugins(sync_cfg), [])
+        sync_app = build_app(
+            root_agent=root_agent, name="agent", config=sync_cfg
+        )
+        self.assertFalse(
+            any(isinstance(p, AsyncCompactionPlugin) for p in sync_app.plugins)
+        )
+        cfg = sync_app.events_compaction_config
         self.assertIsNotNone(cfg)
         self.assertIsInstance(cfg.summarizer, LlmEventSummarizer)
         self.assertGreater(cfg.compaction_interval, 0)
         self.assertGreaterEqual(cfg.overlap_size, 0)
         self.assertGreater(cfg.token_threshold, 0)
         self.assertGreaterEqual(cfg.event_retention_size, 0)
-        self.assertIn("{conversation_history}", FDE_COMPACTION_PROMPT_TEMPLATE)
 
     def test_compaction_can_be_disabled(self) -> None:
         disabled_cfg = AppConfig(compaction=CompactionConfig(enabled=False))
         self.assertIsNone(build_compaction_config(config=disabled_cfg))
+        self.assertEqual(build_compaction_plugins(disabled_cfg), [])
         disabled_app = build_app(
             root_agent=root_agent, name="agent", config=disabled_cfg
         )
         self.assertIsNone(disabled_app.events_compaction_config)
+        self.assertFalse(
+            any(isinstance(p, AsyncCompactionPlugin) for p in disabled_app.plugins)
+        )
 
     def test_adk_agent_loader_discovers_app_with_compaction(self) -> None:
         project_root = str(Path(__file__).resolve().parent.parent)
         loaded = AgentLoader(agents_dir=project_root).load_agent("agent")
         self.assertIsInstance(loaded, App)
-        self.assertIsNotNone(loaded.events_compaction_config)
+        self.assertTrue(
+            any(isinstance(p, AsyncCompactionPlugin) for p in loaded.plugins)
+        )
 
 
 class TestJsonConfig(unittest.TestCase):

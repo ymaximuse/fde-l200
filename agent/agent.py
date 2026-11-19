@@ -85,7 +85,9 @@ def build_app(
 ) -> App:
     """Construct the ADK App wrapping root_agent with compaction, security, PII redaction, and observability."""
     cfg = config or get_config()
-    active_plugins = plugins if plugins is not None else build_plugins(cfg)
+    active_plugins = (
+        plugins if plugins is not None else build_plugins(cfg, summarizer=summarizer)
+    )
     return App(
         name=name,
         root_agent=root_agent,

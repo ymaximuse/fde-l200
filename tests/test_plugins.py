@@ -3,12 +3,19 @@
 import asyncio
 import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
-from google.adk.events import Event
+from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
+from google.adk.events import Event, EventActions
+from google.adk.events.event_actions import EventCompaction
+from google.adk.flows.llm_flows.context._compaction import _process_compaction_events
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
+from google.adk.sessions import InMemorySessionService
+from google.adk.sessions.sqlite_session_service import SqliteSessionService
 from google.genai import types
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
@@ -21,6 +28,10 @@ from agent.config import (
     ModelRoutingConfig,
     PiiConfig,
     SecurityConfig,
+)
+from agent.plugins.compaction import (
+    AsyncCompactionPlugin,
+    select_first_n_messages_to_compact,
 )
 from agent.plugins.observability import (
     ObservabilityPlugin,
@@ -517,6 +528,381 @@ class TestStrategicModelRouting(unittest.TestCase):
         self.assertFalse(
             any(isinstance(p, ModelRoutingPlugin) for p in disabled_app.plugins)
         )
+
+
+class _FakeAsyncSummarizer(BaseEventsSummarizer):
+    def __init__(
+        self,
+        *,
+        gate: asyncio.Event | None = None,
+        started: asyncio.Event | None = None,
+        fail: bool = False,
+    ) -> None:
+        self.gate = gate
+        self.started = started
+        self.fail = fail
+        self.calls: list[list[Event]] = []
+
+    async def maybe_summarize_events(self, *, events: list[Event]) -> Event | None:
+        self.calls.append(list(events))
+        if self.started is not None:
+            self.started.set()
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.fail:
+            raise RuntimeError("summarizer boom")
+        if not events:
+            return None
+        return Event(
+            invocation_id=Event.new_id(),
+            author="user",
+            actions=EventActions(
+                compaction=EventCompaction(
+                    start_timestamp=events[0].timestamp,
+                    end_timestamp=events[-1].timestamp,
+                    compacted_content=types.Content(
+                        role="model",
+                        parts=[
+                            types.Part.from_text(
+                                text=f"Summary of {len(events)} messages"
+                            )
+                        ],
+                    ),
+                )
+            ),
+        )
+
+
+def _msg_event(
+    text: str,
+    *,
+    ts: float,
+    author: str = "user",
+    role: str = "user",
+    inv_id: str = "inv_1",
+) -> Event:
+    return Event(
+        invocation_id=inv_id,
+        author=author,
+        timestamp=ts,
+        content=types.Content(
+            role=role,
+            parts=[types.Part.from_text(text=text)],
+        ),
+    )
+
+
+class TestAsyncBackgroundCompaction(unittest.TestCase):
+    def test_select_first_n_messages_respects_threshold_prior_compaction_and_tool_pairs(
+        self,
+    ) -> None:
+        events = [
+            _msg_event(f"msg {i}", ts=100.0 + i, inv_id=f"inv_{i}")
+            for i in range(6)
+        ]
+        # Fewer than N -> nothing to compact.
+        self.assertEqual(select_first_n_messages_to_compact(events[:3], 4), [])
+
+        # >= N -> exact first N messages.
+        selected = select_first_n_messages_to_compact(events, 4)
+        self.assertEqual([e.timestamp for e in selected], [100.0, 101.0, 102.0, 103.0])
+
+        # After a compaction covering [100.0, 103.0], only 2 uncompacted messages remain (< 4).
+        compaction = Event(
+            invocation_id="comp_1",
+            author="user",
+            timestamp=106.0,
+            actions=EventActions(
+                compaction=EventCompaction(
+                    start_timestamp=100.0,
+                    end_timestamp=103.0,
+                    compacted_content=types.Content(
+                        role="model",
+                        parts=[types.Part.from_text(text="summary")],
+                    ),
+                )
+            ),
+        )
+        self.assertEqual(
+            select_first_n_messages_to_compact(events + [compaction], 4), []
+        )
+
+        # Tool call at index 3 whose response is at index 4 must not be split across the boundary.
+        tool_events = [
+            _msg_event("u1", ts=1.0, inv_id="inv_1"),
+            _msg_event("m1", ts=2.0, author="fde_duckie", role="model", inv_id="inv_1"),
+            _msg_event("u2", ts=3.0, inv_id="inv_2"),
+            Event(
+                invocation_id="inv_2",
+                author="fde_duckie",
+                timestamp=4.0,
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                id="call_1", name="get_enablement_status", args={}
+                            )
+                        )
+                    ],
+                ),
+            ),
+            Event(
+                invocation_id="inv_2",
+                author="fde_duckie",
+                timestamp=5.0,
+                content=types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                id="call_1",
+                                name="get_enablement_status",
+                                response={"status": "ok"},
+                            )
+                        )
+                    ],
+                ),
+            ),
+        ]
+        safe_prefix = select_first_n_messages_to_compact(tool_events, 4)
+        self.assertEqual([e.timestamp for e in safe_prefix], [1.0, 2.0, 3.0])
+
+    def test_async_compaction_runs_in_background_without_blocking_turn(self) -> None:
+        buf = io.StringIO()
+        test_logger = configure_logging(
+            level="DEBUG",
+            stream=buf,
+            logger_name="fde_duckie.test.async_compaction",
+        )
+
+        async def _exercise() -> None:
+            gate = asyncio.Event()
+            started = asyncio.Event()
+            summarizer = _FakeAsyncSummarizer(gate=gate, started=started)
+            plugin = AsyncCompactionPlugin(
+                first_n_messages=4,
+                summarizer=summarizer,
+                log=test_logger,
+            )
+            session_service = InMemorySessionService()
+            session = await session_service.create_session(
+                app_name="agent", user_id="alex_noogler", session_id="s1"
+            )
+            for i in range(6):
+                await session_service.append_event(
+                    session,
+                    _msg_event(
+                        f"message {i}",
+                        ts=1000.0 + i,
+                        author="user" if i % 2 == 0 else "fde_duckie_coordinator",
+                        role="user" if i % 2 == 0 else "model",
+                        inv_id=f"inv_{i // 2}",
+                    ),
+                )
+
+            ctx = SimpleNamespace(
+                session=session,
+                session_service=session_service,
+                plugin_manager=SimpleNamespace(_skip_closing_plugins=False),
+            )
+            await plugin.before_run_callback(invocation_context=ctx)
+            # after_run_callback must return immediately while summarizer is still blocked!
+            await asyncio.wait_for(
+                plugin.after_run_callback(invocation_context=ctx), timeout=0.5
+            )
+            await asyncio.wait_for(started.wait(), timeout=0.5)
+            self.assertEqual(plugin.pending_task_count, 1)
+
+            # Release the background summarizer and wait for completion.
+            gate.set()
+            await plugin.wait_for_pending(timeout=2.0)
+            self.assertEqual(plugin.pending_task_count, 0)
+
+            self.assertEqual(len(summarizer.calls), 1)
+            self.assertEqual(
+                [e.timestamp for e in summarizer.calls[0]],
+                [1000.0, 1001.0, 1002.0, 1003.0],
+            )
+
+            updated = await session_service.get_session(
+                app_name="agent", user_id="alex_noogler", session_id="s1"
+            )
+            self.assertIsNotNone(updated)
+            compaction_events = [
+                e for e in updated.events if e.actions and e.actions.compaction
+            ]
+            self.assertEqual(len(compaction_events), 1)
+            comp = compaction_events[0].actions.compaction
+            self.assertEqual(comp.start_timestamp, 1000.0)
+            self.assertEqual(comp.end_timestamp, 1003.0)
+
+            # ADK's prompt assembler replaces the first 4 messages with the summary
+            # while keeping messages 4 and 5 raw.
+            effective = _process_compaction_events(updated.events)
+            texts = [
+                e.content.parts[0].text
+                for e in effective
+                if e.content and e.content.parts
+            ]
+            self.assertEqual(
+                texts, ["Summary of 4 messages", "message 4", "message 5"]
+            )
+
+        asyncio.run(_exercise())
+
+        events = [json.loads(line)["event"] for line in buf.getvalue().splitlines() if line]
+        self.assertEqual(events, ["compaction.scheduled", "compaction.completed"])
+
+    def test_async_compaction_defers_and_flushes_on_sqlite_during_active_turn(
+        self,
+    ) -> None:
+        buf = io.StringIO()
+        test_logger = configure_logging(
+            level="DEBUG",
+            stream=buf,
+            logger_name="fde_duckie.test.async_compaction_sqlite",
+        )
+
+        async def _exercise() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                db_path = Path(tmpdir) / "compaction_test.db"
+                session_service = SqliteSessionService(db_path=str(db_path))
+                try:
+                    gate = asyncio.Event()
+                    started = asyncio.Event()
+                    summarizer = _FakeAsyncSummarizer(gate=gate, started=started)
+                    plugin = AsyncCompactionPlugin(
+                        first_n_messages=4,
+                        summarizer=summarizer,
+                        log=test_logger,
+                    )
+                    session = await session_service.create_session(
+                        app_name="agent", user_id="priya_fde", session_id="s_sql"
+                    )
+                    for i in range(4):
+                        await session_service.append_event(
+                            session,
+                            _msg_event(f"turn1 msg {i}", ts=2000.0 + i, inv_id="inv_1"),
+                        )
+
+                    # Turn 1 completes and kicks off background compaction.
+                    ctx1 = SimpleNamespace(
+                        session=session,
+                        session_service=session_service,
+                        plugin_manager=SimpleNamespace(_skip_closing_plugins=False),
+                    )
+                    await plugin.before_run_callback(invocation_context=ctx1)
+                    await plugin.after_run_callback(invocation_context=ctx1)
+                    await asyncio.wait_for(started.wait(), timeout=0.5)
+
+                    # Turn 2 begins while compaction is still running.
+                    turn2_session = await session_service.get_session(
+                        app_name="agent", user_id="priya_fde", session_id="s_sql"
+                    )
+                    ctx2 = SimpleNamespace(
+                        session=turn2_session,
+                        session_service=session_service,
+                        plugin_manager=SimpleNamespace(_skip_closing_plugins=False),
+                    )
+                    await plugin.before_run_callback(invocation_context=ctx2)
+
+                    # Background summarizer finishes mid-turn -> must defer instead of causing StaleSessionError.
+                    gate.set()
+                    await plugin.wait_for_pending(timeout=2.0)
+
+                    # Turn 2 appends its own event cleanly with no StaleSessionError.
+                    await session_service.append_event(
+                        turn2_session,
+                        _msg_event("turn2 reply", ts=2010.0, inv_id="inv_2"),
+                    )
+
+                    # Turn 2 ends -> deferred compaction is flushed cleanly to SQLite.
+                    await plugin.after_run_callback(invocation_context=ctx2)
+                    await plugin.close()
+
+                    persisted = await session_service.get_session(
+                        app_name="agent", user_id="priya_fde", session_id="s_sql"
+                    )
+                    self.assertIsNotNone(persisted)
+                    compaction_events = [
+                        e
+                        for e in persisted.events
+                        if e.actions and e.actions.compaction
+                    ]
+                    self.assertEqual(len(compaction_events), 1)
+                    self.assertEqual(
+                        compaction_events[0].actions.compaction.start_timestamp, 2000.0
+                    )
+                    self.assertEqual(
+                        compaction_events[0].actions.compaction.end_timestamp, 2003.0
+                    )
+                finally:
+                    await session_service.close()
+
+        asyncio.run(_exercise())
+
+        events = [json.loads(line)["event"] for line in buf.getvalue().splitlines() if line]
+        self.assertIn("compaction.deferred", events)
+        self.assertIn("compaction.flushed", events)
+
+    def test_async_compaction_handles_errors_and_ignores_nested_ephemeral_runs(
+        self,
+    ) -> None:
+        buf = io.StringIO()
+        test_logger = configure_logging(
+            level="DEBUG",
+            stream=buf,
+            logger_name="fde_duckie.test.async_compaction_err",
+        )
+
+        async def _exercise() -> None:
+            summarizer = _FakeAsyncSummarizer(fail=True)
+            plugin = AsyncCompactionPlugin(
+                first_n_messages=2,
+                summarizer=summarizer,
+                log=test_logger,
+            )
+            session_service = InMemorySessionService()
+            session = await session_service.create_session(
+                app_name="agent", user_id="alex_noogler", session_id="s_err"
+            )
+            for i in range(2):
+                await session_service.append_event(
+                    session, _msg_event(f"m{i}", ts=3000.0 + i, inv_id="inv_1")
+                )
+
+            # Nested ephemeral AgentTool run must be ignored completely.
+            nested_ctx = SimpleNamespace(
+                session=session,
+                session_service=session_service,
+                plugin_manager=SimpleNamespace(_skip_closing_plugins=True),
+            )
+            await plugin.before_run_callback(invocation_context=nested_ctx)
+            await plugin.after_run_callback(invocation_context=nested_ctx)
+            self.assertEqual(plugin.pending_task_count, 0)
+            self.assertEqual(len(summarizer.calls), 0)
+
+            # Real run whose summarizer raises must not crash and must clean up in-flight state.
+            real_ctx = SimpleNamespace(
+                session=session,
+                session_service=session_service,
+                plugin_manager=SimpleNamespace(_skip_closing_plugins=False),
+            )
+            await plugin.before_run_callback(invocation_context=real_ctx)
+            await plugin.after_run_callback(invocation_context=real_ctx)
+            await plugin.wait_for_pending(timeout=2.0)
+            self.assertEqual(plugin.pending_task_count, 0)
+            self.assertEqual(len(summarizer.calls), 1)
+
+        asyncio.run(_exercise())
+
+        records = [json.loads(line) for line in buf.getvalue().splitlines() if line]
+        self.assertEqual(
+            [r["event"] for r in records],
+            ["compaction.scheduled", "compaction.error"],
+        )
+        self.assertEqual(records[-1]["severity"], "WARNING")
 
 
 if __name__ == "__main__":

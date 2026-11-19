@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
 from google.adk.plugins import BasePlugin
 
 from agent.config import AppConfig, get_config
 from agent.plugins.compaction import (
+    AsyncCompactionPlugin,
     FDE_COMPACTION_PROMPT_TEMPLATE,
     build_compaction_config,
+    build_compaction_plugins,
+    select_first_n_messages_to_compact,
 )
 from agent.plugins.observability import (
     ObservabilityPlugin,
@@ -26,11 +30,16 @@ from agent.plugins.routing import (
 from agent.plugins.security import ModelArmorPlugin, build_security_plugins
 
 
-def build_plugins(config: AppConfig | None = None) -> list[BasePlugin]:
+def build_plugins(
+    config: AppConfig | None = None,
+    *,
+    summarizer: BaseEventsSummarizer | None = None,
+) -> list[BasePlugin]:
     """Assemble the default ADK plugin stack from AppConfig."""
     cfg = config or get_config()
     plugins: list[BasePlugin] = list(build_security_plugins(cfg))
     plugins.extend(build_routing_plugins(cfg))
+    plugins.extend(build_compaction_plugins(cfg, summarizer=summarizer))
     if cfg.pii.enabled:
         plugins.append(PiiRedactionPlugin(config=cfg.pii))
     plugins.append(ObservabilityPlugin())
@@ -38,6 +47,7 @@ def build_plugins(config: AppConfig | None = None) -> list[BasePlugin]:
 
 
 __all__ = [
+    "AsyncCompactionPlugin",
     "FDE_COMPACTION_PROMPT_TEMPLATE",
     "ModelArmorPlugin",
     "ModelRoutingPlugin",
@@ -46,6 +56,7 @@ __all__ = [
     "PiiScrubber",
     "RoutingDecision",
     "build_compaction_config",
+    "build_compaction_plugins",
     "build_plugins",
     "build_routing_plugins",
     "build_security_plugins",
@@ -53,5 +64,6 @@ __all__ = [
     "configure_otel",
     "log_event",
     "read_complexity_from_state",
+    "select_first_n_messages_to_compact",
     "select_model",
 ]
