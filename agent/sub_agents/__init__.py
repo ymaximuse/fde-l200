@@ -1,10 +1,16 @@
 """Specialist sub-agents orchestrated by FDE Duckie."""
 
-from .duckie_proxy_agent import duckie_proxy_agent
-from .enablement_agent import enablement_agent
-from .onboarding_guide_agent import onboarding_guide_agent
+from .duckie_proxy_agent import create_duckie_proxy_agent, duckie_proxy_agent
+from .enablement_agent import create_enablement_agent, enablement_agent
+from .onboarding_guide_agent import (
+    create_onboarding_guide_agent,
+    onboarding_guide_agent,
+)
 
 __all__ = [
+    "create_duckie_proxy_agent",
+    "create_enablement_agent",
+    "create_onboarding_guide_agent",
     "duckie_proxy_agent",
     "enablement_agent",
     "onboarding_guide_agent",

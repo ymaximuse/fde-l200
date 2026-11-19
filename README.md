@@ -10,28 +10,78 @@ Multi-agent Google ADK onboarding assistant for new Google Forward Deployed Engi
 2. **`onboarding_guide_agent`** — Guides Day-1 setup (**Cloudtop**, **Argolis**, `go/fde-github`), 30/60/90-day ramp milestones, pod/buddy/Chat contacts, and deterministic **"What should I do next?"** prioritization.
 3. **`duckie_proxy_agent`** — Forwards general, non-FDE-specific Google questions (Workday, gBenefits, corporate card, Piper/CitC, compliance training, `go/wtf`) to a clean `DuckieClient` stub ready to be swapped with real Duckie MCP/RPC.
 
-## Context Compaction
+## Configuration (`--config` JSON)
 
-FDE Duckie exports an ADK `App` (`agent.agent.app`) configured with `EventsCompactionConfig` (`agent/compaction.py`) so both `main.py` and `adk run agent` / `adk web` automatically compact long onboarding conversations using a dedicated Flash-Lite `LlmEventSummarizer`:
-
-- **Sliding-window trigger**: Compacts every `5` user turns with `1` turn of overlap (`FDE_DUCKIE_COMPACTION_INTERVAL`, `FDE_DUCKIE_COMPACTION_OVERLAP`).
-- **Token-threshold trigger**: Compacts post-invocation whenever prompt tokens reach `8000`, retaining the last `2` raw events (`FDE_DUCKIE_COMPACTION_TOKEN_THRESHOLD`, `FDE_DUCKIE_COMPACTION_RETENTION_SIZE`).
-- Disable anytime via `FDE_DUCKIE_COMPACTION_ENABLED=false` or `uv run python main.py --no-compaction`.
-
-## Setup
+All runtime settings (model, compaction, structured logging, OpenTelemetry, and default persona) are consolidated into a single validated Pydantic JSON config (`agent/config.py`) passed via `--config`. `.env` is reserved strictly for credentials/secrets.
 
 ```bash
 uv sync
-cp .env.example .env  # set GOOGLE_API_KEY (or Vertex AI vars) and optional FDE_DUCKIE_MODEL
+cp .env.example .env                # set GOOGLE_API_KEY (or Vertex AI credentials)
+uv run python scripts/setup_db.py   # initialize & seed local SQLite DB (data/fde_duckie.db)
 ```
+
+### Local SQLite Persistence (`agent/db.py` & `scripts/setup_db.py`)
+
+By default (`database.backend="sqlite"`, `database.url="sqlite:///data/fde_duckie.db"` in `config.json`), FDE Duckie persists both **ADK session state + conversation history** (via ADK's native `SqliteSessionService`) and **Noogler profile updates** (`noogler_profiles` table) in a local SQLite database:
+
+```bash
+# Seed or reset the local dev database
+uv run python scripts/setup_db.py
+uv run python scripts/setup_db.py --reset
+
+# Sessions automatically resume across runs (or pass --new-session / --session <id>)
+uv run python main.py --user priya_fde "Mark my L300 labs as 6 completed"
+uv run python main.py --user priya_fde "Am I eligible for L400 now?"
+
+# Use the same SQLite database in ADK Web UI
+uv run adk web --session_service_uri sqlite:///data/fde_duckie.db
+```
+
+Set `"database": {"backend": "memory"}` in `--config` for ephemeral in-memory runs, or `"backend": "database"` with a SQLAlchemy URI (`google-adk[db]`) for Postgres/MySQL.
+
+### HashiCorp Vault Secrets (`agent/secrets.py` & `scripts/manage_secrets.py`)
+
+By default (`secrets.backend="vault"` in `config.json`), FDE Duckie fetches runtime secrets (`GOOGLE_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`) from **HashiCorp Vault KV v2** (`VAULT_ADDR`, `VAULT_TOKEN` / `~/.vault-token`), with seamless fallback to `.env` if Vault is not running:
+
+```bash
+# 1. Start local HashiCorp Vault in dev mode
+vault server -dev -dev-root-token-id=dev-root-token
+export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=dev-root-token
+
+# 2. Store secrets in Vault (or import from .env)
+uv run python scripts/manage_secrets.py set GOOGLE_API_KEY
+uv run python scripts/manage_secrets.py import-env
+uv run python scripts/manage_secrets.py list
+```
+
+### Terraform (`infra/terraform/`)
+
+A single local Terraform config (`hashicorp/vault` + built-in `terraform_data`) reads `config.json`, seeds runtime secrets into HashiCorp Vault KV v2, and initializes/seeds `data/fde_duckie.db` via `scripts/setup_db.py`. See [infra/terraform/README.md](infra/terraform/README.md).
+
+Pass `--config` as either a JSON file path or an inline JSON override:
+
+```bash
+# Load from a JSON config file (defaults to ./config.json)
+uv run python main.py --config config.json
+
+# Or pass inline JSON config directly
+uv run python main.py --config '{"default_user": "priya_fde", "otel": {"exporter": "console"}}' "Can I register for L400 Bootcamp yet?"
+```
+
+For `adk run agent` and `adk web`, `config.json` in the project root is loaded automatically, or set `FDE_DUCKIE_CONFIG=path/to/config.json` in `.env`.
+
+### Context Compaction & Observability
+
+- **Context Compaction (`agent/compaction.py`)**: Enabled by default via ADK `App` + `EventsCompactionConfig` using a Flash-Lite `LlmEventSummarizer` with both sliding-window (`interval: 5`, `overlap_size: 1`) and token-threshold (`token_threshold: 8000`, `event_retention_size: 2`) triggers.
+- **Structured Logging & OpenTelemetry (`agent/observability.py`)**: `ObservabilityPlugin` is attached to `app.plugins`, emitting single-line trace-correlated JSON logs (`trace_id`/`span_id`) for agent/tool events while ADK handles OTel spans natively. Configure `otel.exporter` as `none`, `console`, or `otlp`.
 
 ## Run
 
-Interactive CLI (defaults to `alex_noogler`, Day 12):
+Interactive CLI:
 
 ```bash
 uv run python main.py
-uv run python main.py --user priya_fde --show-tools
+uv run python main.py --config config.json --show-tools
 ```
 
 Single prompt examples:

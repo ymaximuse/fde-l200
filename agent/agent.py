@@ -1,15 +1,16 @@
-"""Root coordinator and ADK App (with context compaction) for FDE Duckie."""
+"""Root coordinator and ADK App (with context compaction & observability) for FDE Duckie."""
 
 from google.adk.agents import LlmAgent
+from google.adk.apps.app import App
 from google.adk.tools import AgentTool
 
 from agent.compaction import build_app
-from agent.config import LOW_TEMP_CONFIG, MODEL_NAME
+from agent.config import AppConfig, get_config
 from agent.state import load_noogler_profile, switch_noogler_persona
 from agent.sub_agents import (
-    duckie_proxy_agent,
-    enablement_agent,
-    onboarding_guide_agent,
+    create_duckie_proxy_agent,
+    create_enablement_agent,
+    create_onboarding_guide_agent,
 )
 
 COORDINATOR_INSTRUCTION = """You are **FDE Duckie**, the onboarding assistant for new Google Forward Deployed Engineers (FDE Nooglers).
@@ -30,24 +31,33 @@ Rules:
 - Keep responses friendly, structured, and concise.
 """
 
-root_agent = LlmAgent(
-    name="fde_duckie",
-    model=MODEL_NAME,
-    description=(
-        "FDE Duckie root coordinator for Google FDE Noogler onboarding: routes "
-        "between FDE Enablement, Setup/Ramp Guide, and General Duckie (stub)."
-    ),
-    instruction=COORDINATOR_INSTRUCTION,
-    tools=[
-        AgentTool(agent=enablement_agent),
-        AgentTool(agent=onboarding_guide_agent),
-        AgentTool(agent=duckie_proxy_agent),
-        switch_noogler_persona,
-    ],
-    before_agent_callback=load_noogler_profile,
-    generate_content_config=LOW_TEMP_CONFIG,
-)
 
-# ADK CLI (`adk run agent` / `adk web`) and `main.py` load `app` so
-# EventsCompactionConfig is active automatically across all run modes.
+def create_root_agent(config: AppConfig | None = None) -> LlmAgent:
+    cfg = config or get_config()
+    return LlmAgent(
+        name="fde_duckie",
+        model=cfg.model.name,
+        description=(
+            "FDE Duckie root coordinator for Google FDE Noogler onboarding: routes "
+            "between FDE Enablement, Setup/Ramp Guide, and General Duckie (stub)."
+        ),
+        instruction=COORDINATOR_INSTRUCTION,
+        tools=[
+            AgentTool(agent=create_enablement_agent(cfg)),
+            AgentTool(agent=create_onboarding_guide_agent(cfg)),
+            AgentTool(agent=create_duckie_proxy_agent(cfg)),
+            switch_noogler_persona,
+        ],
+        before_agent_callback=load_noogler_profile,
+        generate_content_config=cfg.model.to_generate_content_config(),
+    )
+
+
+def create_app(config: AppConfig | None = None, *, name: str = "agent") -> App:
+    cfg = config or get_config()
+    return build_app(root_agent=create_root_agent(cfg), name=name, config=cfg)
+
+
+# Default module-level exports discovered by `adk run agent` and `adk web`.
+root_agent = create_root_agent()
 app = build_app(root_agent=root_agent, name="agent")

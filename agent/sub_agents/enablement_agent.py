@@ -2,7 +2,7 @@
 
 from google.adk.agents import LlmAgent
 
-from agent.config import LOW_TEMP_CONFIG, MODEL_NAME
+from agent.config import AppConfig, get_config
 from agent.schemas import EnablementAgentInput
 from agent.tools.enablement_tools import (
     check_l400_eligibility,
@@ -27,19 +27,25 @@ Rules:
 5. Present results concisely with bullet points, exact counts, blockers, and go/ links from tool output.
 """
 
-enablement_agent = LlmAgent(
-    name="enablement_agent",
-    model=MODEL_NAME,
-    description=(
-        "Checks and updates FDE Noogler enablement prerequisites (L200, L300, L400, "
-        "PCA, GAIL, CDL), L400 eligibility blockers, pacing, and dashboard sync notes."
-    ),
-    instruction=ENABLEMENT_INSTRUCTION,
-    input_schema=EnablementAgentInput,
-    tools=[
-        get_enablement_status,
-        check_l400_eligibility,
-        update_enablement_progress,
-    ],
-    generate_content_config=LOW_TEMP_CONFIG,
-)
+
+def create_enablement_agent(config: AppConfig | None = None) -> LlmAgent:
+    cfg = config or get_config()
+    return LlmAgent(
+        name="enablement_agent",
+        model=cfg.model.name,
+        description=(
+            "Checks and updates FDE Noogler enablement prerequisites (L200, L300, L400, "
+            "PCA, GAIL, CDL), L400 eligibility blockers, pacing, and dashboard sync notes."
+        ),
+        instruction=ENABLEMENT_INSTRUCTION,
+        input_schema=EnablementAgentInput,
+        tools=[
+            get_enablement_status,
+            check_l400_eligibility,
+            update_enablement_progress,
+        ],
+        generate_content_config=cfg.model.to_generate_content_config(),
+    )
+
+
+enablement_agent = create_enablement_agent()

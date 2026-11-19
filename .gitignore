@@ -7,3 +7,12 @@ dist/
 build/
 .pytest_cache/
 .adk/
+fde_duckie_traces.jsonl
+data/*.db
+data/*.db-wal
+data/*.db-shm
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

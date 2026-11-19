@@ -1,4 +1,4 @@
-"""ADK context compaction configuration for FDE Duckie."""
+"""ADK context compaction configuration and App builder for FDE Duckie."""
 
 from __future__ import annotations
 
@@ -7,14 +7,8 @@ from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.models import Gemini
 
-from agent.config import (
-    COMPACTION_ENABLED,
-    COMPACTION_EVENT_RETENTION_SIZE,
-    COMPACTION_INTERVAL,
-    COMPACTION_MODEL_NAME,
-    COMPACTION_OVERLAP_SIZE,
-    COMPACTION_TOKEN_THRESHOLD,
-)
+from agent.config import AppConfig, get_config
+from agent.observability import ObservabilityPlugin
 
 FDE_COMPACTION_PROMPT_TEMPLATE = (
     "You are compacting conversation history for FDE Duckie, an onboarding "
@@ -33,28 +27,24 @@ FDE_COMPACTION_PROMPT_TEMPLATE = (
 
 def build_compaction_config(
     *,
-    enabled: bool = COMPACTION_ENABLED,
-    model_name: str = COMPACTION_MODEL_NAME,
-    compaction_interval: int = COMPACTION_INTERVAL,
-    overlap_size: int = COMPACTION_OVERLAP_SIZE,
-    token_threshold: int = COMPACTION_TOKEN_THRESHOLD,
-    event_retention_size: int = COMPACTION_EVENT_RETENTION_SIZE,
+    config: AppConfig | None = None,
     summarizer: BaseEventsSummarizer | None = None,
 ) -> EventsCompactionConfig | None:
-    """Build ADK EventsCompactionConfig combining sliding-window and token-threshold triggers."""
-    if not enabled:
+    """Build ADK EventsCompactionConfig from AppConfig."""
+    cfg = config or get_config()
+    if not cfg.compaction.enabled:
         return None
 
     active_summarizer = summarizer or LlmEventSummarizer(
-        llm=Gemini(model=model_name),
+        llm=Gemini(model=cfg.compaction_model_name),
         prompt_template=FDE_COMPACTION_PROMPT_TEMPLATE,
     )
     return EventsCompactionConfig(
         summarizer=active_summarizer,
-        compaction_interval=compaction_interval,
-        overlap_size=overlap_size,
-        token_threshold=token_threshold,
-        event_retention_size=event_retention_size,
+        compaction_interval=cfg.compaction.interval,
+        overlap_size=cfg.compaction.overlap_size,
+        token_threshold=cfg.compaction.token_threshold,
+        event_retention_size=cfg.compaction.event_retention_size,
     )
 
 
@@ -62,15 +52,19 @@ def build_app(
     *,
     root_agent,
     name: str = "agent",
-    compaction_enabled: bool = COMPACTION_ENABLED,
+    config: AppConfig | None = None,
     summarizer: BaseEventsSummarizer | None = None,
+    plugins: list | None = None,
 ) -> App:
-    """Construct the ADK App wrapping root_agent with context compaction."""
+    """Construct the ADK App wrapping root_agent with compaction and observability."""
+    cfg = config or get_config()
+    active_plugins = plugins if plugins is not None else [ObservabilityPlugin()]
     return App(
         name=name,
         root_agent=root_agent,
+        plugins=active_plugins,
         events_compaction_config=build_compaction_config(
-            enabled=compaction_enabled,
+            config=cfg,
             summarizer=summarizer,
         ),
     )

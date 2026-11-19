@@ -2,7 +2,7 @@
 
 from google.adk.agents import LlmAgent
 
-from agent.config import LOW_TEMP_CONFIG, MODEL_NAME
+from agent.config import AppConfig, get_config
 from agent.schemas import OnboardingGuideInput
 from agent.tools.onboarding_tools import (
     get_next_recommended_actions,
@@ -27,19 +27,25 @@ Rules:
 5. Keep responses structured, warm, and concise with clear next steps and links from tool output.
 """
 
-onboarding_guide_agent = LlmAgent(
-    name="onboarding_guide_agent",
-    model=MODEL_NAME,
-    description=(
-        "Helps FDE Nooglers with Day-1 setup (Cloudtop, Argolis, go/fde-github), "
-        "30/60/90-day ramp milestones, next-action planning, and pod/buddy/chat contacts."
-    ),
-    instruction=ONBOARDING_GUIDE_INSTRUCTION,
-    input_schema=OnboardingGuideInput,
-    tools=[
-        get_next_recommended_actions,
-        get_setup_checklist,
-        get_team_contacts,
-    ],
-    generate_content_config=LOW_TEMP_CONFIG,
-)
+
+def create_onboarding_guide_agent(config: AppConfig | None = None) -> LlmAgent:
+    cfg = config or get_config()
+    return LlmAgent(
+        name="onboarding_guide_agent",
+        model=cfg.model.name,
+        description=(
+            "Helps FDE Nooglers with Day-1 setup (Cloudtop, Argolis, go/fde-github), "
+            "30/60/90-day ramp milestones, next-action planning, and pod/buddy/chat contacts."
+        ),
+        instruction=ONBOARDING_GUIDE_INSTRUCTION,
+        input_schema=OnboardingGuideInput,
+        tools=[
+            get_next_recommended_actions,
+            get_setup_checklist,
+            get_team_contacts,
+        ],
+        generate_content_config=cfg.model.to_generate_content_config(),
+    )
+
+
+onboarding_guide_agent = create_onboarding_guide_agent()

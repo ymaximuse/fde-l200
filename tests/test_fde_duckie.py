@@ -2,10 +2,16 @@
 
 import asyncio
 import inspect
+import io
+import json
+import os
+import sqlite3
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 from google.adk.apps import App
 from google.adk.apps.base_events_summarizer import BaseEventsSummarizer
 from google.adk.apps.compaction import _run_compaction_for_sliding_window
@@ -14,25 +20,56 @@ from google.adk.cli.utils.agent_loader import AgentLoader
 from google.adk.events import Event, EventActions
 from google.adk.events.event_actions import EventCompaction
 from google.adk.sessions import InMemorySessionService
+from google.adk.sessions.sqlite_session_service import SqliteSessionService
 from google.adk.tools import AgentTool, FunctionTool
 from google.adk.tools import _function_tool_declarations as ftd
 from google.genai import types
-from pydantic import TypeAdapter
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import TypeAdapter, ValidationError
 
 from agent.agent import app as fde_app
-from agent.agent import root_agent
+from agent.agent import create_app, root_agent
 from agent.compaction import (
     FDE_COMPACTION_PROMPT_TEMPLATE,
     build_app,
     build_compaction_config,
+)
+from agent.db import (
+    SqliteNooglerProfileStore,
+    configure_storage,
+    create_session_service,
+)
+from agent.observability import (
+    ObservabilityPlugin,
+    configure_logging,
+    configure_otel,
+    log_event,
 )
 from agent.backends import (
     get_duckie_client,
     get_knowledge_base,
     get_profile_store,
     set_duckie_client,
+    set_profile_store,
 )
-from agent.config import MODEL_NAME
+from agent.config import (
+    AppConfig,
+    CompactionConfig,
+    DatabaseConfig,
+    LoggingConfig,
+    ModelConfig,
+    OtelConfig,
+    SecretsConfig,
+    get_config,
+    load_config,
+)
+from agent.secrets import (
+    EnvSecretManager,
+    VaultSecretManager,
+    create_secret_manager,
+    hydrate_runtime_secrets,
+)
+from scripts.setup_db import seed_local_db
 from agent.mocks import (
     MockFdeKnowledgeBase,
     MockNooglerProfileStore,
@@ -212,8 +249,9 @@ class TestDuckieStub(unittest.TestCase):
 
 class TestADKAgentGraphIntegrity(unittest.TestCase):
     def test_root_and_specialists_meet_flash_lite_constraints(self) -> None:
+        expected_model = get_config().model.name
         self.assertEqual(root_agent.name, "fde_duckie")
-        self.assertEqual(root_agent.model, MODEL_NAME)
+        self.assertEqual(root_agent.model, expected_model)
         self.assertIsNotNone(root_agent.before_agent_callback)
 
         # Strict Flash-Lite tool budget: <= 4 tools on root and every specialist.
@@ -226,7 +264,7 @@ class TestADKAgentGraphIntegrity(unittest.TestCase):
         )
 
         for specialist in (enablement_agent, onboarding_guide_agent, duckie_proxy_agent):
-            self.assertEqual(specialist.model, MODEL_NAME)
+            self.assertEqual(specialist.model, expected_model)
             self.assertLessEqual(len(specialist.tools), 4)
 
     def test_tool_declarations_have_well_defined_json_schemas(self) -> None:
@@ -358,9 +396,10 @@ class TestContextCompaction(unittest.TestCase):
         self.assertIn("{conversation_history}", FDE_COMPACTION_PROMPT_TEMPLATE)
 
     def test_compaction_can_be_disabled(self) -> None:
-        self.assertIsNone(build_compaction_config(enabled=False))
+        disabled_cfg = AppConfig(compaction=CompactionConfig(enabled=False))
+        self.assertIsNone(build_compaction_config(config=disabled_cfg))
         disabled_app = build_app(
-            root_agent=root_agent, name="agent", compaction_enabled=False
+            root_agent=root_agent, name="agent", config=disabled_cfg
         )
         self.assertIsNone(disabled_app.events_compaction_config)
 
@@ -373,14 +412,19 @@ class TestContextCompaction(unittest.TestCase):
     def test_sliding_window_compaction_appends_compaction_event(self) -> None:
         async def _run() -> None:
             fake_summarizer = _FakeSummarizer()
+            comp_cfg = AppConfig(
+                compaction=CompactionConfig(
+                    interval=2,
+                    overlap_size=1,
+                    token_threshold=8000,
+                    event_retention_size=2,
+                )
+            )
             test_app = App(
                 name="agent",
                 root_agent=root_agent,
                 events_compaction_config=build_compaction_config(
-                    compaction_interval=2,
-                    overlap_size=1,
-                    token_threshold=8000,
-                    event_retention_size=2,
+                    config=comp_cfg,
                     summarizer=fake_summarizer,
                 ),
             )
@@ -441,6 +485,408 @@ class TestContextCompaction(unittest.TestCase):
             )
 
         asyncio.run(_run())
+
+
+class TestObservabilityAndOTel(unittest.TestCase):
+    def test_app_registers_observability_plugin(self) -> None:
+        self.assertTrue(
+            any(isinstance(p, ObservabilityPlugin) for p in fde_app.plugins)
+        )
+
+    def test_configure_otel_none_is_noop(self) -> None:
+        self.assertIsNone(configure_otel(exporter="none", set_global=False))
+
+    def test_structured_json_logging_correlates_otel_trace_and_span(self) -> None:
+        buf = io.StringIO()
+        test_logger = configure_logging(
+            level="DEBUG",
+            stream=buf,
+            logger_name="fde_duckie.test.trace",
+        )
+        span_exporter = InMemorySpanExporter()
+        provider = configure_otel(
+            exporter="console",
+            span_exporter=span_exporter,
+            set_global=False,
+        )
+        self.assertIsNotNone(provider)
+        try:
+            tracer = provider.get_tracer("fde_duckie.test")
+            with tracer.start_as_current_span("test_span") as span:
+                expected_trace_id = format(span.get_span_context().trace_id, "032x")
+                expected_span_id = format(span.get_span_context().span_id, "016x")
+                log_event(
+                    "tool.call",
+                    log=test_logger,
+                    tool_name="get_enablement_status",
+                    persona_id="priya_fde",
+                )
+        finally:
+            provider.shutdown()
+
+        record = json.loads(buf.getvalue().strip())
+        self.assertEqual(record["severity"], "INFO")
+        self.assertEqual(record["event"], "tool.call")
+        self.assertEqual(record["tool_name"], "get_enablement_status")
+        self.assertEqual(record["persona_id"], "priya_fde")
+        self.assertEqual(record["trace_id"], expected_trace_id)
+        self.assertEqual(record["span_id"], expected_span_id)
+        self.assertEqual(len(span_exporter.get_finished_spans()), 1)
+
+    def test_observability_plugin_emits_structured_lifecycle_logs(self) -> None:
+        buf = io.StringIO()
+        test_logger = configure_logging(
+            level="DEBUG",
+            stream=buf,
+            logger_name="fde_duckie.test.plugin",
+        )
+        span_exporter = InMemorySpanExporter()
+        provider = configure_otel(
+            exporter="console",
+            span_exporter=span_exporter,
+            set_global=False,
+        )
+        plugin = ObservabilityPlugin(log=test_logger)
+
+        async def _exercise() -> None:
+            tracer = provider.get_tracer("fde_duckie.test")
+            ctx = _make_context("priya_fde")
+            ctx.invocation_id = "inv_test_1"
+            fake_agent = SimpleNamespace(name="enablement_agent")
+            fake_tool = SimpleNamespace(name="get_enablement_status")
+
+            with tracer.start_as_current_span("plugin_lifecycle"):
+                await plugin.before_agent_callback(
+                    agent=fake_agent, callback_context=ctx
+                )
+                await plugin.before_tool_callback(
+                    tool=fake_tool,
+                    tool_args={"track": "L300"},
+                    tool_context=ctx,
+                )
+                await plugin.after_tool_callback(
+                    tool=fake_tool,
+                    tool_args={"track": "L300"},
+                    tool_context=ctx,
+                    result={"status": "ok"},
+                )
+                await plugin.on_tool_error_callback(
+                    tool=fake_tool,
+                    tool_args={"track": "L300"},
+                    tool_context=ctx,
+                    error=RuntimeError("boom"),
+                )
+
+        try:
+            asyncio.run(_exercise())
+        finally:
+            provider.shutdown()
+
+        log_records = [json.loads(line) for line in buf.getvalue().splitlines() if line]
+        self.assertEqual(
+            [r["event"] for r in log_records],
+            ["agent.start", "tool.call", "tool.result", "tool.error"],
+        )
+        self.assertEqual(log_records[-1]["severity"], "ERROR")
+        self.assertTrue(all("trace_id" in r and "span_id" in r for r in log_records))
+
+
+class TestJsonConfig(unittest.TestCase):
+    def test_default_config_file_loads_cleanly(self) -> None:
+        config_path = Path(__file__).resolve().parent.parent / "config.json"
+        cfg = load_config(config_path)
+        self.assertEqual(cfg.default_user, "alex_noogler")
+        self.assertEqual(cfg.model.name, "gemini-2.5-flash-lite")
+        self.assertTrue(cfg.compaction.enabled)
+        self.assertEqual(cfg.logging.level, "INFO")
+        self.assertEqual(cfg.otel.exporter, "none")
+
+    def test_inline_json_config_and_dynamic_app_creation(self) -> None:
+        raw = json.dumps(
+            {
+                "default_user": "priya_fde",
+                "model": {"name": "gemini-2.5-flash-lite-custom", "temperature": 0.25},
+                "compaction": {"enabled": False},
+                "logging": {"level": "DEBUG"},
+                "otel": {"service_name": "fde-test", "exporter": "console"},
+            }
+        )
+        cfg = load_config(raw)
+        self.assertEqual(cfg.default_user, "priya_fde")
+        self.assertEqual(cfg.model.name, "gemini-2.5-flash-lite-custom")
+        self.assertEqual(cfg.model.temperature, 0.25)
+        self.assertFalse(cfg.compaction.enabled)
+
+        custom_app = create_app(cfg)
+        self.assertEqual(custom_app.root_agent.model, "gemini-2.5-flash-lite-custom")
+        self.assertEqual(
+            custom_app.root_agent.generate_content_config.temperature, 0.25
+        )
+        self.assertIsNone(custom_app.events_compaction_config)
+        for tool in custom_app.root_agent.tools:
+            if isinstance(tool, AgentTool):
+                self.assertEqual(tool.agent.model, "gemini-2.5-flash-lite-custom")
+
+    def test_unknown_json_config_key_fails_validation(self) -> None:
+        with self.assertRaises(ValidationError):
+            load_config('{"unknown_key": true}')
+
+    def test_missing_config_file_raises_file_not_found(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            load_config("/tmp/definitely_nonexistent_fde_duckie_config.json")
+
+
+class TestSqlitePersistenceAndSeeding(unittest.TestCase):
+    def tearDown(self) -> None:
+        set_profile_store(MockNooglerProfileStore())
+
+    def test_setup_script_seeds_profiles_sessions_and_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "local_dev.db"
+            summary = asyncio.run(
+                seed_local_db(db_path=db_path, app_name="agent", reset=True)
+            )
+            self.assertEqual(
+                summary["all_profiles"], ["alex_noogler", "jordan_fde", "priya_fde"]
+            )
+            self.assertEqual(len(summary["seeded_sessions"]), 3)
+
+            # Verify both ADK session tables and noogler_profiles table exist.
+            with sqlite3.connect(db_path) as conn:
+                tables = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+            self.assertTrue(
+                {
+                    "sessions",
+                    "events",
+                    "app_states",
+                    "user_states",
+                    "noogler_profiles",
+                }.issubset(tables)
+            )
+
+            # Idempotent re-run does not duplicate rows or sessions.
+            rerun = asyncio.run(
+                seed_local_db(db_path=db_path, app_name="agent", reset=False)
+            )
+            self.assertEqual(rerun["seeded_profiles"], [])
+            self.assertEqual(rerun["seeded_sessions"], [])
+
+    def test_session_history_and_state_persist_across_sqlite_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "history.db"
+            cfg = AppConfig(
+                database=DatabaseConfig(backend="sqlite", url=f"sqlite:///{db_path}")
+            )
+
+            async def _roundtrip() -> None:
+                svc1 = create_session_service(cfg)
+                self.assertIsInstance(svc1, SqliteSessionService)
+                try:
+                    sess = await svc1.create_session(
+                        app_name="agent",
+                        user_id="priya_fde",
+                        session_id="default-priya_fde",
+                        state={"noogler_id": "priya_fde", "custom_flag": "persisted"},
+                    )
+                    await svc1.append_event(
+                        sess,
+                        Event(
+                            invocation_id="inv_1",
+                            author="user",
+                            content=types.Content(
+                                role="user",
+                                parts=[types.Part.from_text(text="Check L400")],
+                            ),
+                        ),
+                    )
+                finally:
+                    await svc1.close()
+
+                # Open a brand-new SqliteSessionService instance pointing to the same DB.
+                svc2 = create_session_service(cfg)
+                try:
+                    reloaded = await svc2.get_session(
+                        app_name="agent",
+                        user_id="priya_fde",
+                        session_id="default-priya_fde",
+                    )
+                    self.assertIsNotNone(reloaded)
+                    self.assertEqual(reloaded.state["custom_flag"], "persisted")
+                    self.assertEqual(len(reloaded.events), 1)
+                    self.assertEqual(
+                        reloaded.events[0].content.parts[0].text, "Check L400"
+                    )
+                finally:
+                    await svc2.close()
+
+            asyncio.run(_roundtrip())
+
+    def test_profile_updates_persist_to_sqlite_profile_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "profiles.db"
+            cfg = AppConfig(
+                database=DatabaseConfig(backend="sqlite", url=f"sqlite:///{db_path}")
+            )
+            session_service = configure_storage(cfg)
+            try:
+                self.assertIsInstance(get_profile_store(), SqliteNooglerProfileStore)
+                ctx = _make_context("priya_fde")
+                res = update_enablement_progress(
+                    "L300", "in_progress", labs_completed=6, tool_context=ctx
+                )
+                self.assertEqual(res["status"], "ok")
+
+                # Verify fresh store instance reads the updated 6/7 L300 progress.
+                fresh_store = SqliteNooglerProfileStore(db_path)
+                reloaded_profile = fresh_store.get_profile("priya_fde")
+                self.assertEqual(
+                    reloaded_profile["enablement"]["L300"]["labs_completed"], 6
+                )
+                self.assertEqual(
+                    reloaded_profile["enablement"]["L400"]["status"], "not_started"
+                )
+            finally:
+                asyncio.run(session_service.close())
+
+    def test_memory_backend_returns_in_memory_session_service(self) -> None:
+        cfg = AppConfig(database=DatabaseConfig(backend="memory"))
+        svc = configure_storage(cfg)
+        self.assertIsInstance(svc, InMemorySessionService)
+        self.assertIsInstance(get_profile_store(), MockNooglerProfileStore)
+
+
+class TestVaultSecretsAndTerraform(unittest.TestCase):
+    def _make_fake_vault_transport(self) -> tuple[httpx.MockTransport, list[dict]]:
+        versions: list[dict[str, str]] = []
+        seen_headers: list[dict] = []
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            seen_headers.append(dict(request.headers))
+            if request.headers.get("x-vault-token") != "test-vault-token":
+                return httpx.Response(403, json={"errors": ["permission denied"]})
+
+            if request.url.path != "/v1/secret/data/fde-duckie":
+                return httpx.Response(404, json={"errors": []})
+
+            if request.method == "GET":
+                if not versions:
+                    return httpx.Response(404, json={"errors": []})
+                ver_param = request.url.params.get("version")
+                if ver_param is not None:
+                    idx = int(ver_param) - 1
+                    if idx < 0 or idx >= len(versions):
+                        return httpx.Response(404, json={"errors": []})
+                    payload = versions[idx]
+                    ver = idx + 1
+                else:
+                    payload = versions[-1]
+                    ver = len(versions)
+                return httpx.Response(
+                    200,
+                    json={"data": {"data": payload, "metadata": {"version": ver}}},
+                )
+
+            if request.method == "POST":
+                body = json.loads(request.content.decode("utf-8"))
+                versions.append(dict(body.get("data", {})))
+                return httpx.Response(200, json={"data": {"version": len(versions)}})
+
+            return httpx.Response(405)
+
+        return httpx.MockTransport(_handler), seen_headers
+
+    def test_vault_kv_v2_crud_and_versioning(self) -> None:
+        transport, seen_headers = self._make_fake_vault_transport()
+        vault = VaultSecretManager(
+            addr="http://127.0.0.1:8200",
+            mount="secret",
+            path="fde-duckie",
+            token="test-vault-token",
+            namespace="fde-ns",
+            transport=transport,
+        )
+
+        self.assertEqual(vault.list_secrets(), [])
+        self.assertIsNone(vault.get_secret("GOOGLE_API_KEY"))
+
+        v1 = vault.set_secret("GOOGLE_API_KEY", "key-v1")
+        v2 = vault.set_secret("GOOGLE_API_KEY", "key-v2")
+        self.assertEqual(v1, 1)
+        self.assertEqual(v2, 2)
+        self.assertEqual(vault.get_secret("GOOGLE_API_KEY"), "key-v2")
+        self.assertEqual(vault.get_secret("GOOGLE_API_KEY", version="1"), "key-v1")
+        self.assertEqual(vault.list_secrets(), ["GOOGLE_API_KEY"])
+
+        self.assertTrue(vault.delete_secret("GOOGLE_API_KEY"))
+        self.assertFalse(vault.delete_secret("GOOGLE_API_KEY"))
+        self.assertIsNone(vault.get_secret("GOOGLE_API_KEY"))
+        self.assertTrue(
+            all(h.get("x-vault-namespace") == "fde-ns" for h in seen_headers)
+        )
+
+    def test_hydrate_runtime_secrets_populates_env_and_respects_existing(self) -> None:
+        transport, _ = self._make_fake_vault_transport()
+        vault = VaultSecretManager(token="test-vault-token", transport=transport)
+        vault.set_secret("TEST_HYDRATE_KEY", "secret-from-vault")
+
+        os.environ.pop("TEST_HYDRATE_KEY", None)
+        try:
+            loaded = hydrate_runtime_secrets(
+                names=("TEST_HYDRATE_KEY",), manager=vault, strict=True
+            )
+            self.assertEqual(loaded, ["TEST_HYDRATE_KEY"])
+            self.assertEqual(os.environ["TEST_HYDRATE_KEY"], "secret-from-vault")
+
+            # Does not overwrite already-set env var when overwrite=False.
+            vault.set_secret("TEST_HYDRATE_KEY", "new-secret")
+            loaded_again = hydrate_runtime_secrets(
+                names=("TEST_HYDRATE_KEY",), manager=vault, overwrite=False, strict=True
+            )
+            self.assertEqual(loaded_again, [])
+            self.assertEqual(os.environ["TEST_HYDRATE_KEY"], "secret-from-vault")
+        finally:
+            os.environ.pop("TEST_HYDRATE_KEY", None)
+
+    def test_create_secret_manager_backends_and_graceful_fallback(self) -> None:
+        vault_cfg = AppConfig(secrets=SecretsConfig(backend="vault"))
+        self.assertIsInstance(create_secret_manager(vault_cfg), VaultSecretManager)
+
+        env_cfg = AppConfig(secrets=SecretsConfig(backend="env"))
+        self.assertIsInstance(create_secret_manager(env_cfg), EnvSecretManager)
+
+        # Unauthenticated Vault fails gracefully when strict=False.
+        broken_vault = VaultSecretManager(token=None)
+        old_token = os.environ.pop("VAULT_TOKEN", None)
+        try:
+            hydrated = hydrate_runtime_secrets(
+                names=("NONEXISTENT_KEY_XYZ",), manager=broken_vault, strict=False
+            )
+            self.assertEqual(hydrated, [])
+        finally:
+            if old_token is not None:
+                os.environ["VAULT_TOKEN"] = old_token
+
+    def test_terraform_config_uses_single_vault_provider(self) -> None:
+        tf_root = Path(__file__).resolve().parent.parent / "infra" / "terraform"
+        self.assertFalse((tf_root / "gcp").exists())
+        self.assertFalse((tf_root / "local").exists())
+        for fname in ("main.tf", "variables.tf", "outputs.tf", "README.md"):
+            self.assertTrue(
+                (tf_root / fname).is_file(),
+                f"Missing Terraform file: infra/terraform/{fname}",
+            )
+        tf_main = (tf_root / "main.tf").read_text(encoding="utf-8")
+        self.assertIn("hashicorp/vault", tf_main)
+        self.assertNotIn("hashicorp/local", tf_main)
+        self.assertNotIn("hashicorp/null", tf_main)
+        self.assertIn("vault_kv_secret_v2", tf_main)
+        self.assertIn("terraform_data", tf_main)
+        self.assertIn("scripts/setup_db.py", tf_main)
 
 
 if __name__ == "__main__":

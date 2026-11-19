@@ -8,7 +8,7 @@ from google.adk.tools import ToolContext
 from pydantic import Field
 
 from agent.backends import get_profile_store
-from agent.config import DEFAULT_PERSONA_ID
+from agent.config import get_config
 from agent.schemas import PersonaId, SwitchPersonaResult
 
 PROFILE_STATE_KEY = "noogler_profile"
@@ -44,8 +44,9 @@ def load_noogler_profile(callback_context: CallbackContext) -> None:
         return
 
     store = get_profile_store()
-    requested_id = callback_context.state.get(PERSONA_ID_STATE_KEY, DEFAULT_PERSONA_ID)
-    persona_id = requested_id if store.has_persona(requested_id) else DEFAULT_PERSONA_ID
+    default_user = get_config().default_user
+    requested_id = callback_context.state.get(PERSONA_ID_STATE_KEY, default_user)
+    persona_id = requested_id if store.has_persona(requested_id) else default_user
     profile = store.get_profile(persona_id)
 
     callback_context.state[PERSONA_ID_STATE_KEY] = persona_id
@@ -58,8 +59,9 @@ def get_active_profile(tool_context: ToolContext) -> dict[str, Any]:
     profile = tool_context.state.get(PROFILE_STATE_KEY)
     if profile is None:
         store = get_profile_store()
-        persona_id = tool_context.state.get(PERSONA_ID_STATE_KEY, DEFAULT_PERSONA_ID)
-        persona_id = persona_id if store.has_persona(persona_id) else DEFAULT_PERSONA_ID
+        default_user = get_config().default_user
+        persona_id = tool_context.state.get(PERSONA_ID_STATE_KEY, default_user)
+        persona_id = persona_id if store.has_persona(persona_id) else default_user
         profile = store.get_profile(persona_id)
         save_active_profile(tool_context, profile)
         return copy.deepcopy(profile)
@@ -67,11 +69,16 @@ def get_active_profile(tool_context: ToolContext) -> dict[str, Any]:
 
 
 def save_active_profile(tool_context: ToolContext, profile: dict[str, Any]) -> None:
-    """Persist updated profile to session state (reassignment triggers ADK state_delta)."""
+    """Persist updated profile to session state and durable store if supported."""
     stored = copy.deepcopy(profile)
     tool_context.state[PERSONA_ID_STATE_KEY] = stored["persona_id"]
     tool_context.state[PROFILE_STATE_KEY] = stored
     tool_context.state[SUMMARY_STATE_KEY] = format_profile_summary(stored)
+
+    store = get_profile_store()
+    save_fn = getattr(store, "save_profile", None)
+    if callable(save_fn):
+        save_fn(stored)
 
 
 def switch_noogler_persona(

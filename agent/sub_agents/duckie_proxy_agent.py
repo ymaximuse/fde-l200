@@ -2,7 +2,7 @@
 
 from google.adk.agents import LlmAgent
 
-from agent.config import LOW_TEMP_CONFIG, MODEL_NAME
+from agent.config import AppConfig, get_config
 from agent.schemas import DuckieProxyInput
 from agent.tools.duckie_tools import query_duckie
 
@@ -19,15 +19,21 @@ Rules:
 4. Keep your answer concise.
 """
 
-duckie_proxy_agent = LlmAgent(
-    name="duckie_proxy_agent",
-    model=MODEL_NAME,
-    description=(
-        "Forwards general, non-FDE-specific Google questions (HR, Workday, benefits, "
-        "corporate card, Piper/CitC, general compliance, acronyms) to Duckie (stub)."
-    ),
-    instruction=DUCKIE_PROXY_INSTRUCTION,
-    input_schema=DuckieProxyInput,
-    tools=[query_duckie],
-    generate_content_config=LOW_TEMP_CONFIG,
-)
+
+def create_duckie_proxy_agent(config: AppConfig | None = None) -> LlmAgent:
+    cfg = config or get_config()
+    return LlmAgent(
+        name="duckie_proxy_agent",
+        model=cfg.model.name,
+        description=(
+            "Forwards general, non-FDE-specific Google questions (HR, Workday, benefits, "
+            "corporate card, Piper/CitC, general compliance, acronyms) to Duckie (stub)."
+        ),
+        instruction=DUCKIE_PROXY_INSTRUCTION,
+        input_schema=DuckieProxyInput,
+        tools=[query_duckie],
+        generate_content_config=cfg.model.to_generate_content_config(),
+    )
+
+
+duckie_proxy_agent = create_duckie_proxy_agent()
